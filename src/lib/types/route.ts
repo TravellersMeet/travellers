@@ -14,7 +14,7 @@ export interface RouteWaypoint {
 }
 
 export interface RouteMetadata {
-  id: string;
+  id?: string;
   userId: string;
   origin: Location;
   destination: Location;

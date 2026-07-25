@@ -108,8 +108,41 @@ export function MapLibreRoute({
   }
 
   return (
-  <div style={{ padding: 20, background: "lightgreen" }}>
-    MapLibreRoute Component Works!
-  </div>
+  <Map
+    initialViewState={{
+      longitude: (origin.lng + destination.lng) / 2,
+      latitude: (origin.lat + destination.lat) / 2,
+      zoom: 6,
+    }}
+    style={{
+      width: "100%",
+      height: "100%",
+    }}
+    mapStyle="https://demotiles.maplibre.org/style.json"
+  >
+    <NavigationControl position="top-right" />
+
+    <Marker longitude={origin.lng} latitude={origin.lat} />
+
+    <Marker
+      longitude={destination.lng}
+      latitude={destination.lat}
+    />
+
+    <Source
+      id="route"
+      type="geojson"
+      data={geoJson}
+    >
+      <Layer
+        id="route-line"
+        type="line"
+        paint={{
+          "line-color": "#2563eb",
+          "line-width": 5,
+        }}
+      />
+    </Source>
+  </Map>
 );
 }
