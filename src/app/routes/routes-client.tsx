@@ -4,7 +4,14 @@ import React, { useState, useEffect } from 'react';
 import { RouteViewer } from '@/components/route-viewer';
 import { routeCacheManager } from '@/lib/utils/route-cache-manager';
 import type { CachedRoute } from '@/lib/types/route';
-import { Map, Plus, Search, Loader2 } from "lucide-react";
+import {
+  Map,
+  Plus,
+  Search,
+  Loader2,
+  Trash2,
+  Pencil,
+} from "lucide-react";
 import RouteCalendarExportButton from '@/components/route-calendar-export-button';
 import Link from 'next/link';
 
@@ -14,6 +21,9 @@ export default function RoutesClient() {
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusMessage, setStatusMessage] = useState('');
+  const [editingRoute, setEditingRoute] = useState<CachedRoute | null>(null);
+  const [editTripName, setEditTripName] = useState("");
+  const [editNotes, setEditNotes] = useState("");
 
   useEffect(() => {
     loadRoutes();
@@ -43,6 +53,111 @@ export default function RoutesClient() {
     }
   }
 
+  const handleDeleteRoute = async (routeId: string) => {
+  const confirmed = window.confirm(
+    "Are you sure you want to delete this route?"
+  );
+
+  if (!confirmed) return;
+
+  try {
+    const response = await fetch(`/api/routes?id=${routeId}`, {
+      method: "DELETE",
+    });
+
+    if (!response.ok) {
+      throw new Error("Failed to delete route");
+    }
+
+    // Remove from IndexedDB cache
+    await routeCacheManager.deleteCachedRoute(routeId);
+
+    // Remove from UI
+    setRoutes((prev) => prev.filter((route) => route.id !== routeId));
+
+    // If deleted route is selected, clear viewer
+    if (selectedRoute === routeId) {
+      setSelectedRoute(null);
+    }
+
+    setStatusMessage("Route deleted successfully.");
+  } catch (err) {
+    console.error(err);
+    alert("Failed to delete route.");
+  }
+};
+
+const handleSaveEdit = async () => {
+  if (!editingRoute) return;
+
+  try {
+    const response = await fetch("/api/routes", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+  id: editingRoute.id,
+
+  origin: {
+    lat: editingRoute.originLat,
+    lng: editingRoute.originLng,
+  },
+
+  destination: {
+    lat: editingRoute.destinationLat,
+    lng: editingRoute.destinationLng,
+  },
+
+  waypoints:
+  typeof editingRoute.waypoints === "string"
+    ? JSON.parse(editingRoute.waypoints)
+    : editingRoute.waypoints || [],
+
+  originName: editingRoute.originName,
+  destinationName: editingRoute.destinationName,
+
+  distance: editingRoute.distance,
+  duration: editingRoute.duration,
+  encodedPolyline: editingRoute.encodedPolyline,
+
+  tripName: editTripName,
+  notes: editNotes,
+}),
+    });
+
+    if (!response.ok) {
+  const error = await response.json();
+  console.log("FIELD ERRORS:", error.details.fieldErrors);
+  alert(JSON.stringify(error, null, 2));
+  return;
+}
+
+    const updatedRoute = await response.json();
+
+    // Update IndexedDB
+    await routeCacheManager.cacheRoute(updatedRoute);
+
+    // Update UI immediately
+    setRoutes((prev) =>
+  prev.map((route) =>
+    route.id === updatedRoute.id
+      ? {
+          ...route,
+          ...updatedRoute,
+        }
+      : route
+  )
+);
+
+    setEditingRoute(null);
+    setStatusMessage("Route updated successfully.");
+  } catch (err) {
+    console.error(err);
+    alert("Failed to update route.");
+  }
+};
+
   const filteredRoutes = routes.filter(route => {
     const q = searchQuery.toLowerCase();
     return (
@@ -53,6 +168,7 @@ export default function RoutesClient() {
   });
 
   return (
+    <>
    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
       {/* Header */}
       <header className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
@@ -169,10 +285,36 @@ export default function RoutesClient() {
                       </div>
                     </button>
 
-                    <RouteCalendarExportButton
-                      route={route}
-                      onStatusChange={setStatusMessage}
-                    />
+                    <div className="mt-4 flex items-center justify-between">
+  <RouteCalendarExportButton
+    route={route}
+    onStatusChange={setStatusMessage}
+  />
+
+<div className="flex items-center gap-2">
+  <button
+  onClick={() => {
+  console.log("ROUTE OBJECT:", route);
+
+  setEditingRoute(route);
+  setEditTripName(route.tripName || "");
+  setEditNotes(route.notes || "");
+}}
+  className="rounded-md p-2 text-blue-600 hover:bg-blue-100 dark:hover:bg-blue-900/30 transition"
+  title="Edit Route"
+>
+  <Pencil className="w-4 h-4" />
+</button>
+
+  <button
+    onClick={() => handleDeleteRoute(route.id)}
+    className="rounded-md p-2 text-red-600 hover:bg-red-100 dark:hover:bg-red-900/30 transition"
+    title="Delete Route"
+  >
+    <Trash2 className="w-4 h-4" />
+  </button>
+</div>
+</div>
                   </div>
                 ))}
               </div>
@@ -202,5 +344,66 @@ export default function RoutesClient() {
           </div>
         )}
       </div>
-    </div>);
+    </div>
+
+{editingRoute && (
+  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+    <div className="w-full max-w-md rounded-xl bg-white dark:bg-gray-800 p-6 shadow-xl">
+
+      <h2 className="text-xl font-semibold mb-4">
+        Edit Route
+      </h2>
+
+      <div className="space-y-4">
+
+        <div>
+          <label className="block mb-1 font-medium">
+            Trip Name
+          </label>
+
+          <input
+            value={editTripName}
+            onChange={(e) => setEditTripName(e.target.value)}
+            className="w-full rounded-lg border p-2 dark:bg-gray-900"
+          />
+        </div>
+
+        <div>
+          <label className="block mb-1 font-medium">
+            Notes
+          </label>
+
+          <textarea
+            rows={4}
+            value={editNotes}
+            onChange={(e) => setEditNotes(e.target.value)}
+            className="w-full rounded-lg border p-2 dark:bg-gray-900"
+          />
+        </div>
+
+      </div>
+
+      <div className="mt-6 flex justify-end gap-3">
+
+        <button
+          onClick={() => setEditingRoute(null)}
+          className="rounded-lg border px-4 py-2"
+        >
+          Cancel
+        </button>
+
+        <button
+           onClick={handleSaveEdit}
+  className="rounded-lg bg-blue-600 px-4 py-2 text-white hover:bg-blue-700"
+        >
+          Save Changes
+        </button>
+
+      </div>
+
+    </div>
+  </div>
+)}
+</>
+);
 }
