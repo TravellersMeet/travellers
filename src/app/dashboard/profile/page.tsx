@@ -46,14 +46,17 @@ export default function ProfileViewPage() {
       try {
         const [profileRes, routesRes, ticketsRes] = await Promise.all([
           fetch("/api/user/profile"),
-          fetch("/api/routes"),
-          fetch("/api/tickets"),
+          fetch("/api/routes?limit=3"),
+          fetch("/api/tickets?limit=100"),
         ]);
 
         if (profileRes.ok) setProfile(await profileRes.json());
-        if (routesRes.ok) setTrips((await routesRes.json()).slice(0, 3));
+        if (routesRes.ok) {
+          const { items } = await routesRes.json();
+          setTrips(items.slice(0, 3));
+        }
         if (ticketsRes.ok) {
-          const { tickets } = await ticketsRes.json();
+          const { items: tickets } = await ticketsRes.json();
           setTicketVerified(tickets?.some((t: { status: string }) => t.status === "VERIFIED"));
         }
       } catch (err) {
