@@ -12,20 +12,14 @@ import {
   storeIdempotencyResult,
 } from "@/lib/idempotency";
 import { normalizeDestination } from "@/lib/normalize-destination";
-import prisma from "@/lib/prisma";
-import { withValidation } from "@/lib/withValidation";
-import prisma from "@/lib/prisma";
-import { auth } from "@/lib/auth";
-import { NextRequest, NextResponse } from "next/server";
-import { z } from "zod";
-import { withValidation } from "@/lib/withValidation";
-import { uploadFileToCloudinary } from "@/lib/cloudinary-upload";
 import {
   buildTimestampCursorWhere,
   createPaginatedResponse,
   PaginationError,
   parsePaginationParams,
 } from "@/lib/pagination";
+import prisma from "@/lib/prisma";
+import { withValidation } from "@/lib/withValidation";
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
 
@@ -59,16 +53,6 @@ const ticketSchema = z.object({
       message: "Invalid date format",
     },
   ),
-    .string()
-    .min(1, "Destination required"),
-  departureDate: z
-    .string()
-    .refine(
-      (date) => !Number.isNaN(Date.parse(date)),
-      {
-        message: "Invalid date format",
-      },
-    ),
   file: z
     .any()
     .refine(
@@ -131,7 +115,6 @@ async function findDuplicateTicket(
 export const POST = withValidation(
   ticketSchema,
   async (request, data) => {
-  async (_request, data) => {
     const session = await auth();
 
     if (!session?.user?.id) {
@@ -141,12 +124,16 @@ export const POST = withValidation(
       );
     }
 
-    let idempotencyClaim;
+    const userId = session.user.id;
+
+    let idempotencyClaim: Awaited<
+      ReturnType<typeof claimIdempotencyKey>
+    >;
 
     try {
       idempotencyClaim =
         await claimIdempotencyKey(
-          session.user.id,
+          userId,
           request.headers.get("Idempotency-Key"),
         );
     } catch (error) {
@@ -192,7 +179,7 @@ export const POST = withValidation(
 
     try {
       const duplicate = await findDuplicateTicket(
-        session.user.id,
+        userId,
         data.destination,
         data.departureDate,
       );
@@ -224,18 +211,14 @@ export const POST = withValidation(
 
       uploadedPublicId = uploaded.publicId;
 
+      const departureDate =
+        getUtcDateRange(data.departureDate).start;
+
       const ticket = await prisma.ticket.create({
         data: {
-          userId: session.user.id,
+          userId,
           destination: data.destination.trim(),
-          departureDate:
-            getUtcDateRange(
-              data.departureDate,
-            ).start,
-          destination: data.destination,
-          departureDate: new Date(
-            data.departureDate,
-          ),
+          departureDate,
           ticketUrl: uploaded.url,
           status: TicketStatus.PENDING,
         },
@@ -287,18 +270,6 @@ export const POST = withValidation(
       return NextResponse.json(
         {
           error: "Failed to upload ticket",
-      return NextResponse.json({
-        ok: true,
-        ticket,
-      });
-    } catch (error) {
-      console.error("Ticket upload error:", error);
-      return NextResponse.json(
-        {
-          error:
-            error instanceof Error
-              ? error.message
-              : "Failed to upload ticket",
         },
         { status: 500 },
       );
@@ -306,8 +277,6 @@ export const POST = withValidation(
   },
 );
 
-// Get user's tickets
-export async function GET(_request: NextRequest) {
 // Get user's paginated tickets
 export async function GET(request: NextRequest) {
   const session = await auth();
@@ -323,6 +292,7 @@ export async function GET(request: NextRequest) {
     const { limit, cursor } = parsePaginationParams(
       request.nextUrl.searchParams,
     );
+
     const cursorWhere = buildTimestampCursorWhere(
       "createdAt",
       cursor,
@@ -340,8 +310,6 @@ export async function GET(request: NextRequest) {
       take: limit + 1,
     });
 
-    return NextResponse.json({ tickets });
-  } catch (error) {
     const result = createPaginatedResponse(
       tickets,
       limit,
@@ -350,7 +318,6 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       ...result,
-      // Alias retained for existing API consumers.
       tickets: result.items,
     });
   } catch (error) {
@@ -362,6 +329,7 @@ export async function GET(request: NextRequest) {
     }
 
     console.error("Fetch tickets error:", error);
+
     return NextResponse.json(
       { error: "Server error" },
       { status: 500 },
