@@ -46,14 +46,17 @@ export default function ProfileViewPage() {
       try {
         const [profileRes, routesRes, ticketsRes] = await Promise.all([
           fetch("/api/user/profile"),
-          fetch("/api/routes"),
-          fetch("/api/tickets"),
+          fetch("/api/routes?limit=3"),
+          fetch("/api/tickets?limit=100"),
         ]);
 
         if (profileRes.ok) setProfile(await profileRes.json());
-        if (routesRes.ok) setTrips((await routesRes.json()).slice(0, 3));
+        if (routesRes.ok) {
+          const { items } = await routesRes.json();
+          setTrips(items.slice(0, 3));
+        }
         if (ticketsRes.ok) {
-          const { tickets } = await ticketsRes.json();
+          const { items: tickets } = await ticketsRes.json();
           setTicketVerified(tickets?.some((t: { status: string }) => t.status === "VERIFIED"));
         }
       } catch (err) {
@@ -237,7 +240,7 @@ export default function ProfileViewPage() {
                           href={link}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="text-xs inline-flex items-center gap-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-350 px-3 py-1.5 rounded-xl transition"
+                          className="text-xs inline-flex items-center gap-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 px-3 py-1.5 rounded-xl transition"
                         >
                           {isInstagram ? "Instagram" : "Twitter/X"}
                         </a>

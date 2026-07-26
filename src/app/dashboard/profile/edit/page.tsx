@@ -288,7 +288,7 @@ export default function ProfilePage() {
                                             className={`text-xs px-3 py-1.5 rounded-full font-medium transition duration-150 ${
                                                 active
                                                     ? "bg-[#1A4D2E] text-white shadow-sm"
-                                                    : "bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-350"
+                                                    : "bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300"
                                             }`}
                                         >
                                             {lang}
@@ -318,7 +318,7 @@ export default function ProfilePage() {
                                             className={`text-xs px-3 py-1.5 rounded-full font-medium transition duration-150 ${
                                                 active
                                                     ? "bg-[#1A4D2E] text-white shadow-sm"
-                                                    : "bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-350"
+                                                    : "bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300"
                                             }`}
                                         >
                                             {interest}
@@ -348,7 +348,7 @@ export default function ProfilePage() {
                                             className={`text-xs px-3 py-1.5 rounded-full font-medium transition duration-150 ${
                                                 active
                                                     ? "bg-[#1A4D2E] text-white shadow-sm"
-                                                    : "bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-350"
+                                                    : "bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300"
                                             }`}
                                         >
                                             {acc}

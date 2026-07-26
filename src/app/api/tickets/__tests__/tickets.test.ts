@@ -36,11 +36,22 @@ const dummyFile = new MockFile(["dummy"], "ticket.pdf", {
 }) as File
 
 interface MockNextRequest {
+    headers: {
+        get: (name: string) => string | null
+    }
     formData: () => Promise<FormData>
 }
 
 function makeNextRequest(form: FormData): MockNextRequest {
     return {
+        headers: {
+            get: (name: string) => {
+                if (name.toLowerCase() === "content-type") {
+                    return "multipart/form-data";
+                }
+                return null;
+            }
+        },
         formData: async () => form,
     }
 }

@@ -3,6 +3,7 @@ import prisma from "@/lib/prisma";
 import { POST as onboardPOST } from "../onboard/route";
 import { GET as profileGET, PATCH as profilePATCH } from "../profile/route";
 import { auth } from "@/lib/auth";
+import { NextRequest } from "next/server";
 
 vi.mock("@/lib/prisma", () => ({
   default: {
@@ -102,7 +103,11 @@ describe("Traveler Profiles & Onboarding Flow API Endpoints", () => {
       };
       vi.mocked(prisma.user.findUnique).mockResolvedValue(mockProfile as any);
 
-      const res = await profileGET();
+      const res = await profileGET(
+  new NextRequest(
+    "http://localhost/api/user/profile",
+  ),
+);
       const data = await res.json();
 
       expect(res.status).toBe(200);

@@ -4,8 +4,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { withValidation } from "@/lib/withValidation";
 import { uploadFileToCloudinary } from "@/lib/cloudinary-upload";
+import {
+  buildTimestampCursorWhere,
+  createPaginatedResponse,
+  PaginationError,
+  parsePaginationParams,
+} from "@/lib/pagination";
 
-const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
+const MAX_FILE_SIZE = 10 * 1024 * 1024;
 
 const ALLOWED_TYPES = [
   "image/jpeg",
@@ -15,82 +21,146 @@ const ALLOWED_TYPES = [
 ];
 
 const ticketSchema = z.object({
-  destination: z.string().min(1, "Destination required"),
-  departureDate: z.string().refine((date) => !isNaN(Date.parse(date)), {
-    message: "Invalid date format",
-  }),
+  destination: z
+    .string()
+    .min(1, "Destination required"),
+  departureDate: z
+    .string()
+    .refine(
+      (date) => !Number.isNaN(Date.parse(date)),
+      {
+        message: "Invalid date format",
+      },
+    ),
   file: z
-  .any()
-  .refine((val) => val instanceof File, "File required")
-  .refine((val) => val instanceof File && val.size > 0, "File required")
-  .refine((val) => val instanceof File && val.size <= MAX_FILE_SIZE, "File size exceeds 10MB")
-  .refine(
-    (val) => val instanceof File && ALLOWED_TYPES.includes(val.type),
-    "Unsupported file type"
-  ),
+    .any()
+    .refine(
+      (value) => value instanceof File,
+      "File required",
+    )
+    .refine(
+      (value) =>
+        value instanceof File && value.size > 0,
+      "File required",
+    )
+    .refine(
+      (value) =>
+        value instanceof File &&
+        value.size <= MAX_FILE_SIZE,
+      "File size exceeds 10MB",
+    )
+    .refine(
+      (value) =>
+        value instanceof File &&
+        ALLOWED_TYPES.includes(value.type),
+      "Unsupported file type",
+    ),
 });
 
-export const POST = withValidation(ticketSchema, async (req, data) => {
-  // 🔒 Verify authentication
+export const POST = withValidation(
+  ticketSchema,
+  async (_request, data) => {
+    const session = await auth();
+
+    if (!session?.user?.id) {
+      return NextResponse.json(
+        { error: "Unauthorized" },
+        { status: 401 },
+      );
+    }
+
+    try {
+      const uploaded = await uploadFileToCloudinary(
+        data.file,
+        "travellers/tickets",
+      );
+
+      const ticket = await prisma.ticket.create({
+        data: {
+          userId: session.user.id,
+          destination: data.destination,
+          departureDate: new Date(
+            data.departureDate,
+          ),
+          ticketUrl: uploaded.url,
+          status: "PENDING",
+        },
+      });
+
+      return NextResponse.json({
+        ok: true,
+        ticket,
+      });
+    } catch (error) {
+      console.error("Ticket upload error:", error);
+      return NextResponse.json(
+        {
+          error:
+            error instanceof Error
+              ? error.message
+              : "Failed to upload ticket",
+        },
+        { status: 500 },
+      );
+    }
+  },
+);
+
+// Get user's paginated tickets
+export async function GET(request: NextRequest) {
   const session = await auth();
+
   if (!session?.user?.id) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json(
+      { error: "Unauthorized" },
+      { status: 401 },
+    );
   }
 
   try {
-    const { destination, departureDate, file } = data;
-
-    const uploaded = await uploadFileToCloudinary(
-      file,
-      "travellers/tickets"
+    const { limit, cursor } = parsePaginationParams(
+      request.nextUrl.searchParams,
+    );
+    const cursorWhere = buildTimestampCursorWhere(
+      "createdAt",
+      cursor,
     );
 
-    const ticketUrl = uploaded.url;
-
-    const ticket = await prisma.ticket.create({
-      data: {
-        userId: session.user.id,
-        destination,
-        departureDate: new Date(departureDate),
-        ticketUrl,
-        status: "PENDING",
-      },
-    });
-
-    return NextResponse.json({ ok: true, ticket });
-  } catch (error) {
-    console.error("Ticket upload error:", error);
-    return NextResponse.json(
-  {
-    error:
-      error instanceof Error
-        ? error.message
-        : "Failed to upload ticket",
-  },
-  { status: 500 }
-);
-  }
-});
-
-// Get user's tickets
-export async function GET(req: NextRequest) {
-  const session = await auth();
-  if (!session?.user?.id) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  try {
     const tickets = await prisma.ticket.findMany({
-      where: { userId: session.user.id },
-      orderBy: { createdAt: "desc" },
+      where: {
+        userId: session.user.id,
+        ...(cursorWhere ?? {}),
+      },
+      orderBy: [
+        { createdAt: "desc" },
+        { id: "desc" },
+      ],
+      take: limit + 1,
     });
 
-    return NextResponse.json({ tickets });
+    const result = createPaginatedResponse(
+      tickets,
+      limit,
+      "createdAt",
+    );
+
+    return NextResponse.json({
+      ...result,
+      // Alias retained for existing API consumers.
+      tickets: result.items,
+    });
   } catch (error) {
+    if (error instanceof PaginationError) {
+      return NextResponse.json(
+        { error: error.message },
+        { status: 400 },
+      );
+    }
+
     console.error("Fetch tickets error:", error);
     return NextResponse.json(
       { error: "Server error" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

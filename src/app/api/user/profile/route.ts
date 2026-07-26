@@ -1,13 +1,25 @@
-import { NextResponse, NextRequest } from "next/server";
+import { NextRequest } from "next/server";
+
+import {
+  API_ERROR_CODES,
+  logApiError,
+} from "@/lib/api-error";
+import { apiError, apiJson } from "@/lib/api-response";
 import { auth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
+import { getRequestId } from "@/lib/request-id";
 
-
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const requestId = getRequestId(request);
   const session = await auth();
 
   if (!session?.user?.email) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return apiError(
+      requestId,
+      API_ERROR_CODES.UNAUTHORIZED,
+      "Authentication is required",
+      401,
+    );
   }
 
   try {
@@ -35,54 +47,126 @@ export async function GET() {
     });
 
     if (!user) {
-      return NextResponse.json({ error: "User not found" }, { status: 404 });
+      return apiError(
+        requestId,
+        API_ERROR_CODES.NOT_FOUND,
+        "User profile was not found",
+        404,
+      );
     }
 
-    return NextResponse.json(user);
+    return apiJson(user, requestId);
   } catch (error) {
-    console.error("Profile fetch error:", error);
-    return NextResponse.json({ error: "Failed to fetch profile" }, { status: 500 });
+    logApiError(requestId, "Profile fetch failed", error);
+
+    return apiError(
+      requestId,
+      API_ERROR_CODES.INTERNAL_ERROR,
+      "Unable to fetch the profile",
+      500,
+    );
   }
 }
 
-export async function PATCH(req: NextRequest) {
-    const session = await auth();
+export async function PATCH(request: NextRequest) {
+  const requestId = getRequestId(request);
+  const session = await auth();
 
-    if (!session?.user?.email) {
-        return NextResponse.json(
-            { error: "Unauthorized" },
-            { status: 401 }
-        );
-    }
+  if (!session?.user?.email) {
+    return apiError(
+      requestId,
+      API_ERROR_CODES.UNAUTHORIZED,
+      "Authentication is required",
+      401,
+    );
+  }
 
-    const body = await req.json();
+  let body: Record<string, unknown>;
 
-    try {
-        const updatedUser = await prisma.user.update({
-            where: { email: session.user.email },
-            data: {
-                name: body.name ?? undefined,
-                bio: body.bio ?? undefined,
-                location: body.location ?? undefined,
-                homeLocation: body.homeLocation ?? undefined,
-                languages: body.languages ?? undefined,
-                travelInterests: body.travelInterests ?? undefined,
-                accommodationPrefs: body.accommodationPrefs ?? undefined,
-                budgetRange: body.budgetRange ?? undefined,
-                socialLinks: body.socialLinks ?? undefined,
-                age: body.age !== undefined && body.age !== null ? (isNaN(parseInt(body.age.toString())) ? undefined : parseInt(body.age.toString(), 10)) : undefined,
-                gender: body.gender ?? undefined,
-                travelStyle: body.travelStyle ?? undefined,
-            },
-        });
+  try {
+    body = await request.json();
+  } catch (error) {
+    logApiError(requestId, "Profile payload parsing failed", error);
 
-        return NextResponse.json(updatedUser);
-    } catch (error) {
-        console.error("Profile update error:", error);
+    return apiError(
+      requestId,
+      API_ERROR_CODES.BAD_REQUEST,
+      "Invalid request format",
+      400,
+    );
+  }
 
-        return NextResponse.json(
-            { error: "Failed to update profile" },
-            { status: 500 }
-        );
-    }
+  try {
+    const ageValue = body.age;
+    const parsedAge =
+      ageValue !== undefined && ageValue !== null
+        ? Number.parseInt(String(ageValue), 10)
+        : undefined;
+
+    const updatedUser = await prisma.user.update({
+      where: { email: session.user.email },
+      data: {
+        name:
+          typeof body.name === "string"
+            ? body.name
+            : undefined,
+        bio:
+          typeof body.bio === "string"
+            ? body.bio
+            : undefined,
+        location:
+          typeof body.location === "string"
+            ? body.location
+            : undefined,
+        homeLocation:
+          typeof body.homeLocation === "string"
+            ? body.homeLocation
+            : undefined,
+        languages: Array.isArray(body.languages)
+          ? body.languages
+          : undefined,
+        travelInterests: Array.isArray(body.travelInterests)
+          ? body.travelInterests
+          : undefined,
+        accommodationPrefs: Array.isArray(
+          body.accommodationPrefs,
+        )
+          ? body.accommodationPrefs
+          : undefined,
+        budgetRange:
+          typeof body.budgetRange === "string"
+            ? body.budgetRange
+            : undefined,
+        socialLinks:
+          body.socialLinks &&
+          typeof body.socialLinks === "object"
+            ? body.socialLinks
+            : undefined,
+        age:
+          parsedAge !== undefined &&
+          Number.isFinite(parsedAge)
+            ? parsedAge
+            : undefined,
+        gender:
+          typeof body.gender === "string"
+            ? body.gender
+            : undefined,
+        travelStyle:
+          typeof body.travelStyle === "string"
+            ? body.travelStyle
+            : undefined,
+      },
+    });
+
+    return apiJson(updatedUser, requestId);
+  } catch (error) {
+    logApiError(requestId, "Profile update failed", error);
+
+    return apiError(
+      requestId,
+      API_ERROR_CODES.INTERNAL_ERROR,
+      "Unable to update the profile",
+      500,
+    );
+  }
 }

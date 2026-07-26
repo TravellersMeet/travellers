@@ -1,41 +1,48 @@
-/**
- * API Route: /api/routes/[id]
- * Get a specific route by ID
- */
+import { NextRequest } from "next/server";
 
-import { NextRequest, NextResponse } from 'next/server';
-import { auth } from '@/lib/auth';
-import prisma from '@/lib/prisma';
+import {
+  API_ERROR_CODES,
+  logApiError,
+} from "@/lib/api-error";
+import { apiError, apiJson } from "@/lib/api-response";
+import { auth } from "@/lib/auth";
+import prisma from "@/lib/prisma";
+import { getRequestId } from "@/lib/request-id";
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: { id: string } },
 ) {
+  const requestId = getRequestId(request);
+
   try {
     const session = await auth();
-    
+
     if (!session?.user?.id) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
+      return apiError(
+        requestId,
+        API_ERROR_CODES.UNAUTHORIZED,
+        "Authentication is required",
+        401,
       );
     }
 
     const route = await prisma.route.findUnique({
       where: {
         id: params.id,
-        userId: session.user.id, // Ensure user owns the route
+        userId: session.user.id,
       },
     });
 
     if (!route) {
-      return NextResponse.json(
-        { error: 'Route not found' },
-        { status: 404 }
+      return apiError(
+        requestId,
+        API_ERROR_CODES.NOT_FOUND,
+        "Route was not found",
+        404,
       );
     }
 
-    // Parse waypoints if they exist
     const formattedRoute = {
       ...route,
       origin: {
@@ -46,15 +53,20 @@ export async function GET(
         lat: route.destinationLat,
         lng: route.destinationLng,
       },
-      waypoints: route.waypoints ? JSON.parse(route.waypoints as string) : undefined,
+      waypoints: route.waypoints
+        ? JSON.parse(route.waypoints as string)
+        : undefined,
     };
 
-    return NextResponse.json(formattedRoute);
+    return apiJson(formattedRoute, requestId);
   } catch (error) {
-    console.error('Error fetching route:', error);
-    return NextResponse.json(
-      { error: 'Failed to fetch route' },
-      { status: 500 }
+    logApiError(requestId, "Route fetch failed", error);
+
+    return apiError(
+      requestId,
+      API_ERROR_CODES.INTERNAL_ERROR,
+      "Unable to fetch the route",
+      500,
     );
   }
 }

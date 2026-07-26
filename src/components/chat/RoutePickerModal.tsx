@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { X, Map } from "lucide-react";
+import { fetchAllPaginatedItems } from "@/lib/fetch-paginated";
 
 interface Route {
   id: string;
@@ -44,11 +45,10 @@ export default function RoutePickerModal({
       setLoading(true);
 
       try {
-        const res = await fetch("/api/routes");
-
-        if (!res.ok) throw new Error();
-
-        const data = await res.json();
+        const data =
+          await fetchAllPaginatedItems<Route>(
+            "/api/routes",
+          );
 
         setRoutes(data);
       } catch {

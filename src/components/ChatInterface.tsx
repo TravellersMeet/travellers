@@ -446,7 +446,7 @@ if (!inputText.trim() && !selectedRoute) {
         )}
 
         {/* Conversations List */}
-        <div className="flex-1 overflow-y-auto divide-y divide-slate-50 dark:divide-slate-850">
+        <div className="flex-1 overflow-y-auto divide-y divide-slate-50 dark:divide-slate-800">
           {loadingConvs ? (
             <div className="flex flex-col items-center justify-center py-12 text-slate-400">
               <Loader2 className="animate-spin text-blue-500 mb-2" size={20} />
@@ -544,7 +544,7 @@ if (!inputText.trim() && !selectedRoute) {
               </div>
 
               {activeConv.otherUser.bio && (
-                <div className="hidden md:block max-w-xs xl:max-w-sm rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-850 p-2 text-[10px] text-slate-600 dark:text-slate-400 italic">
+                <div className="hidden md:block max-w-xs xl:max-w-sm rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800 p-2 text-[10px] text-slate-600 dark:text-slate-400 italic">
                   &quot;{activeConv.otherUser.bio}&quot;
                 </div>
               )}
