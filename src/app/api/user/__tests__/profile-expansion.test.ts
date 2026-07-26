@@ -4,6 +4,7 @@ import { POST as onboardPOST } from "../onboard/route";
 import { GET as profileGET, PATCH as profilePATCH } from "../profile/route";
 import { auth } from "@/lib/auth";
 import { NextRequest } from "next/server";
+
 vi.mock("@/lib/prisma", () => ({
   default: {
     user: {

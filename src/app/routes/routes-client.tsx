@@ -7,6 +7,7 @@ import type { CachedRoute } from '@/lib/types/route';
 import { Map, Plus, Search, Loader2 } from "lucide-react";
 import RouteCalendarExportButton from '@/components/route-calendar-export-button';
 import Link from 'next/link';
+import { fetchAllPaginatedItems } from '@/lib/fetch-paginated';
 
 export default function RoutesClient() {
   const [routes, setRoutes] = useState<CachedRoute[]>([]);
@@ -26,9 +27,11 @@ export default function RoutesClient() {
       setRoutes(cachedRoutes);
 
       try {
-        const response = await fetch('/api/routes');
-        if (response.ok) {
-          const serverRoutes = await response.json();
+        const serverRoutes =
+          await fetchAllPaginatedItems<CachedRoute>(
+            "/api/routes",
+          );
+        {
           for (const route of serverRoutes) {
             await routeCacheManager.cacheRoute(route);
           }
