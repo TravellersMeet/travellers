@@ -150,9 +150,12 @@ class RouteCacheManager {
     throw new Error(data.error || "Failed to save route");
   }
 
-  await this.cacheRoute(route);
-}
-
+  console.log("ROUTE BEING CACHED:", route);
+  await this.cacheRoute({
+  ...route,
+  id: data.id,
+});
+  }
   /**
    * Load route from server and cache
    */

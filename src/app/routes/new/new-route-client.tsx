@@ -95,7 +95,6 @@ export default function NewRouteClient({ userId }: { userId: string }) {
 
     try {
       const route: RouteMetadata = {
-        id: crypto.randomUUID(),
         userId,
         origin,
         destination,
@@ -104,11 +103,14 @@ export default function NewRouteClient({ userId }: { userId: string }) {
         distance: routeData.distance,
         duration: routeData.duration,
         encodedPolyline: routeData.encodedPolyline,
-        tripName: tripName || 'Unnamed Route',
+        tripName:
+  tripName.trim() ||
+  `${originAddress || originInput} → ${destinationAddress || destinationInput}`,
         notes,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
+      console.log("NEW ROUTE OBJECT:", route);
 
       // Save to server and cache
       await routeCacheManager.syncRoute(route);
@@ -137,5 +139,161 @@ export default function NewRouteClient({ userId }: { userId: string }) {
     setTripName('New York to Washington DC');
   };
 
-  return <div>Hello</div>;
+  return (
+  <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+    {/* Header */}
+    <div className="border-b bg-white dark:bg-gray-800">
+      <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-5">
+        <div className="flex items-center gap-3">
+          <Link
+            href="/routes"
+            className="rounded-lg border p-2 hover:bg-gray-100 dark:hover:bg-gray-700"
+          >
+            <ArrowLeft className="h-5 w-5" />
+          </Link>
+
+          <div>
+            <h1 className="text-2xl font-bold">
+              Create New Route
+            </h1>
+
+            <p className="text-sm text-gray-500">
+              Plan and save your travel route.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div className="mx-auto max-w-7xl p-6">
+
+      <div className="grid gap-6 lg:grid-cols-2">
+
+        {/* LEFT PANEL */}
+
+        <div className="space-y-5">
+
+          <div>
+            <label className="mb-2 block font-medium">
+              Trip Name
+            </label>
+
+            <input
+              value={tripName}
+              onChange={(e) => setTripName(e.target.value)}
+              placeholder="Weekend Goa Trip"
+              className="w-full rounded-lg border bg-white dark:bg-gray-900 p-3 text-black dark:text-white"
+            />
+          </div>
+
+          <div>
+            <label className="mb-2 block font-medium">
+              Origin
+            </label>
+
+            <PlaceAutocomplete
+              value={originInput}
+              onChange={handleOriginManualInput}
+              onPlaceSelect={handleOriginPlaceSelect}
+            />
+          </div>
+
+          <div>
+            <label className="mb-2 block font-medium">
+              Destination
+            </label>
+
+            <PlaceAutocomplete
+              value={destinationInput}
+              onChange={handleDestinationManualInput}
+              onPlaceSelect={handleDestinationPlaceSelect}
+            />
+          </div>
+
+          <div>
+            <label className="mb-2 block font-medium">
+              Notes
+            </label>
+
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              rows={4}
+              className="w-full rounded-lg border bg-white dark:bg-gray-900 p-3 text-black dark:text-white"
+            />
+          </div>
+
+          {error && (
+            <p className="text-red-600">
+              {error}
+            </p>
+          )}
+
+          <div className="flex gap-3">
+
+  <button
+    onClick={useDemoRoute}
+    className="rounded-lg border px-4 py-2"
+  >
+    Demo Route
+  </button>
+
+  <button
+    onClick={handleSaveRoute}
+    disabled={isSaving}
+    className="rounded-lg bg-blue-600 px-5 py-2 text-white"
+  >
+    {isSaving ? "Saving..." : "Save Route"}
+  </button>
+
+</div>
+
+        </div>
+
+                {/* RIGHT PANEL */}
+
+        <div className="rounded-xl border bg-white dark:bg-gray-800 p-4 min-h-[650px]">
+
+          {origin && destination ? (
+            <MapLibreRoute
+              origin={origin}
+              destination={destination}
+              onRouteCalculated={setRouteData}
+              className="h-full"
+            />
+          ) : (
+            <div className="flex h-full items-center justify-center text-gray-500">
+              Select origin and destination to preview your route.
+            </div>
+          )}
+
+        </div>
+
+        {routeData && (
+  <div className="mt-4 rounded-xl border bg-white dark:bg-gray-800 p-4">
+    <h3 className="mb-3 text-lg font-semibold">
+      Route Details
+    </h3>
+
+    <div className="space-y-2 text-sm">
+
+      <p>
+        <span className="font-medium">Distance:</span>{" "}
+        {routeCacheManager.formatDistance(routeData.distance)}
+      </p>
+
+      <p>
+        <span className="font-medium">Duration:</span>{" "}
+        {routeCacheManager.formatDuration(routeData.duration)}
+      </p>
+
+    </div>
+  </div>
+)}
+
+      </div>
+
+    </div>
+  </div>
+);
 }
