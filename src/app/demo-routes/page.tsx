@@ -110,7 +110,11 @@ export default function DemoRoutesPage() {
                       Saved in IndexedDB
                     </div>
                     <button
-                      onClick={() => handleDeleteRoute(route.id)}
+                      onClick={() => {
+  if (route.id) {
+    handleDeleteRoute(route.id);
+  }
+}}
                       className="text-xs bg-red-500 text-white px-2 py-1 rounded hover:bg-red-600"
                     >
                       🗑️ Delete

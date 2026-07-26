@@ -77,15 +77,16 @@ export function MapLibreRoute({
   }, [origin, destination, onRouteCalculated]);
 
   const geoJson = useMemo(
-    () => ({
-      type: 'Feature',
-      geometry: {
-        type: 'LineString',
-        coordinates,
-      },
-    }),
-    [coordinates]
-  );
+  () => ({
+    type: "Feature" as const,
+    properties: {},
+    geometry: {
+      type: "LineString" as const,
+      coordinates,
+    },
+  }),
+  [coordinates]
+);
 
   if (loading) {
     return (
