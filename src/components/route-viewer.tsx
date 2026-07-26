@@ -41,14 +41,18 @@ export function RouteViewer({
 
       try {
         if (initialRoute) {
-          // Use provided route
-          await routeCacheManager.cacheRoute(initialRoute);
-          const cachedData = await routeCacheManager.getCachedRoute(initialRoute.id);
-          if (cachedData) {
-            setRoute(cachedData);
-            setIsCached(true);
-          }
-        } else if (routeId) {
+  await routeCacheManager.cacheRoute(initialRoute);
+
+  if (initialRoute.id) {
+    const cachedData = await routeCacheManager.getCachedRoute(initialRoute.id);
+
+    if (cachedData) {
+      setRoute(cachedData);
+      setIsCached(true);
+    }
+  }
+}
+        else if (routeId) {
           // Load from cache first
           const cachedData = await routeCacheManager.getCachedRoute(routeId);
           

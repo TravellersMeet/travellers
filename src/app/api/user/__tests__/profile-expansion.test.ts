@@ -106,6 +106,7 @@ describe("Traveler Profiles & Onboarding Flow API Endpoints", () => {
      
 
 const res = await profileGET(
+      const res = await profileGET(
   new NextRequest(
     "http://localhost/api/user/profile",
   ),

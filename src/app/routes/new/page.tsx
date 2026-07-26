@@ -2,6 +2,7 @@ import SignInForm from "@/components/sign-in-form";
 import { auth } from "@/lib/auth";
 import Link from "next/link";
 import type { Metadata } from "next";
+import NewRouteClient from "./new-route-client";
 
 export const metadata: Metadata = {
   title: "New Route",
@@ -29,19 +30,6 @@ export default async function NewRoutePage() {
   }
 
   return (
-    <main className="mx-auto max-w-2xl px-6 py-16 text-center">
-      <h1 className="text-3xl font-bold text-slate-900 dark:text-white mb-4">
-        Route creation is coming soon
-      </h1>
-      <p className="text-slate-600 dark:text-slate-400 mb-8">
-        We&apos;re still building the route-creation flow. Check back soon to plan your next trip.
-      </p>
-      <Link
-        href="/routes"
-        className="inline-block px-6 py-3 rounded-lg bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-semibold hover:opacity-90 transition"
-      >
-        Back to Routes
-      </Link>
-    </main>
+     <NewRouteClient userId={session.user.id} />
   );
 }
