@@ -102,15 +102,8 @@ const handleSaveEdit = async () => {
       body: JSON.stringify({
   id: editingRoute.id,
 
-  origin: {
-    lat: editingRoute.originLat,
-    lng: editingRoute.originLng,
-  },
-
-  destination: {
-    lat: editingRoute.destinationLat,
-    lng: editingRoute.destinationLng,
-  },
+  origin: editingRoute.origin,
+  destination: editingRoute.destination,
 
   waypoints:
   typeof editingRoute.waypoints === "string"
@@ -266,7 +259,7 @@ const handleSaveEdit = async () => {
                   >
                     <button
                       type="button"
-                      onClick={() => setSelectedRoute(route.id)}
+                      onClick={() => setSelectedRoute(route.id ?? null)}
                       className="w-full text-left rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800"
                       aria-label={`View ${route.tripName || 'saved route'} on the map`}
                     >
@@ -310,7 +303,11 @@ const handleSaveEdit = async () => {
 </button>
 
   <button
-    onClick={() => handleDeleteRoute(route.id)}
+    onClick={() => {
+  if (route.id) {
+    handleDeleteRoute(route.id);
+  }
+}}
     className="rounded-md p-2 text-red-600 hover:bg-red-100 dark:hover:bg-red-900/30 transition"
     title="Delete Route"
   >

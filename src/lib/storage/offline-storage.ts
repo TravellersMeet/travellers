@@ -129,12 +129,12 @@ class OfflineStorage {
     const tx = this.db.transaction(['routes', 'routeGeometry'], 'readwrite');
     
     for (const route of routes) {
-      if (route.lastAccessedAt < cutoffDate) {
-        await tx.objectStore('routes').delete(route.id);
-        await tx.objectStore('routeGeometry').delete(route.id);
-        deletedCount++;
-      }
-    }
+  if (route.lastAccessedAt < cutoffDate && route.id) {
+    await tx.objectStore("routes").delete(route.id);
+    await tx.objectStore("routeGeometry").delete(route.id);
+    deletedCount++;
+  }
+}
     
     await tx.done;
     return deletedCount;
