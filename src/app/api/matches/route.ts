@@ -6,6 +6,8 @@ import {
   readMatchCache,
   writeMatchCache,
 } from "@/lib/match-cache";
+
+import redis from "@/lib/redis";
 import { createNotification } from "@/lib/notifications";
 import {
   API_ERROR_CODES,
