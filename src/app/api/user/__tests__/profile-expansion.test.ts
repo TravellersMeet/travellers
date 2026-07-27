@@ -103,7 +103,9 @@ describe("Traveler Profiles & Onboarding Flow API Endpoints", () => {
       };
       vi.mocked(prisma.user.findUnique).mockResolvedValue(mockProfile as any);
 
-      const res = await profileGET(
+     
+
+const res = await profileGET(
   new NextRequest(
     "http://localhost/api/user/profile",
   ),

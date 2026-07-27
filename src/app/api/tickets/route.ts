@@ -5,6 +5,7 @@ import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { deleteCloudinaryAsset } from "@/lib/cloudinary-delete";
 import { uploadFileToCloudinary } from "@/lib/cloudinary-upload";
+import { invalidateMatchCachesForTicket } from "@/lib/match-cache";
 import { getUtcDateRange } from "@/lib/date-range";
 import {
   claimIdempotencyKey,
@@ -224,6 +225,12 @@ export const POST = withValidation(
         },
       });
 
+      await invalidateMatchCachesForTicket({
+        destination: ticket.destination,
+        departureDate: ticket.departureDate,
+      });
+
+      return NextResponse.json({
       const body = {
         ok: true,
         ticket,
@@ -241,6 +248,7 @@ export const POST = withValidation(
         status: 201,
       });
     } catch (error) {
+      console.error("Ticket upload error:", error);
       if (uploadedPublicId) {
         try {
           await deleteCloudinaryAsset(

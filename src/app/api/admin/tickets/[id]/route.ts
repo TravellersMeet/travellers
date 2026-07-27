@@ -2,6 +2,7 @@ import prisma from "@/lib/prisma";
 import { auth } from "@/lib/auth";
 import { NextRequest, NextResponse } from "next/server";
 import { createNotification } from "@/lib/notifications";
+import { invalidateMatchCachesForTicket } from "@/lib/match-cache";
 import { z } from "zod";
 
 const updateSchema = z.object({
@@ -13,19 +14,25 @@ export async function PATCH(
   { params }: { params: { id: string } }
 ) {
   const session = await auth();
+
   if (!session?.user?.id) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json(
+      { error: "Unauthorized" },
+      { status: 401 }
+    );
   }
 
   try {
-    // Check if user is admin
     const user = await prisma.user.findUnique({
       where: { id: session.user.id },
       select: { role: true },
     });
 
     if (user?.role !== "ADMIN") {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      return NextResponse.json(
+        { error: "Forbidden" },
+        { status: 403 }
+      );
     }
 
     const body = await req.json();
@@ -33,8 +40,29 @@ export async function PATCH(
 
     if (!result.success) {
       return NextResponse.json(
-        { error: "Invalid status", details: result.error.flatten() },
+        {
+          error: "Invalid status",
+          details: result.error.flatten(),
+        },
         { status: 400 }
+      );
+    }
+
+    const existingTicket =
+      await prisma.ticket.findUnique({
+        where: { id: params.id },
+        select: {
+          id: true,
+          destination: true,
+          departureDate: true,
+          status: true,
+        },
+      });
+
+    if (!existingTicket) {
+      return NextResponse.json(
+        { error: "Ticket not found" },
+        { status: 404 }
       );
     }
 
@@ -54,30 +82,49 @@ export async function PATCH(
       },
     });
 
-  if (status === "VERIFIED") {
-  await createNotification({
-    userId: ticket.user.id,
-    type: "TICKET_VERIFIED",
-    title: "Ticket verified",
-    content:
-      "Your travel ticket has been verified. You can now appear in traveller matches.",
-    link: "/dashboard",
-  });
-}
+    await invalidateMatchCachesForTicket(
+      {
+        destination: ticket.destination,
+        departureDate: ticket.departureDate,
+      },
+      {
+        destination: existingTicket.destination,
+        departureDate:
+          existingTicket.departureDate,
+      }
+    );
 
-if (status === "REJECTED") {
-  await createNotification({
-    userId: ticket.user.id,
-    type: "TICKET_REJECTED",
-    title: "Ticket rejected",
-    content:
-      "Your uploaded ticket was rejected. Please upload a valid ticket.",
-    link: "/upload",
-  });
-}
-    return NextResponse.json({ ok: true, ticket });
+    if (status === "VERIFIED") {
+      await createNotification({
+        userId: ticket.user.id,
+        type: "TICKET_VERIFIED",
+        title: "Ticket verified",
+        content:
+          "Your travel ticket has been verified. You can now appear in traveller matches.",
+        link: "/dashboard",
+      });
+    }
+
+    if (status === "REJECTED") {
+      await createNotification({
+        userId: ticket.user.id,
+        type: "TICKET_REJECTED",
+        title: "Ticket rejected",
+        content:
+          "Your uploaded ticket was rejected. Please upload a valid ticket.",
+        link: "/upload",
+      });
+    }
+
+    return NextResponse.json({
+      ok: true,
+      ticket,
+    });
   } catch (error) {
-    console.error("Ticket verification error:", error);
+    console.error(
+      "Ticket verification error:",
+      error
+    );
     return NextResponse.json(
       { error: "Server error" },
       { status: 500 }
@@ -85,14 +132,17 @@ if (status === "REJECTED") {
   }
 }
 
-// Get single ticket (admin only)
 export async function GET(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
   const session = await auth();
+
   if (!session?.user?.id) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json(
+      { error: "Unauthorized" },
+      { status: 401 }
+    );
   }
 
   try {
@@ -102,7 +152,10 @@ export async function GET(
     });
 
     if (user?.role !== "ADMIN") {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      return NextResponse.json(
+        { error: "Forbidden" },
+        { status: 403 }
+      );
     }
 
     const ticket = await prisma.ticket.findUnique({
@@ -120,7 +173,10 @@ export async function GET(
     });
 
     if (!ticket) {
-      return NextResponse.json({ error: "Ticket not found" }, { status: 404 });
+      return NextResponse.json(
+        { error: "Ticket not found" },
+        { status: 404 }
+      );
     }
 
     return NextResponse.json({ ticket });
