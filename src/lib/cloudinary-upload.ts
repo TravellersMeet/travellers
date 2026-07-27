@@ -1,9 +1,18 @@
-import cloudinary, { isCloudinaryConfigured } from "./cloudinary";
+import cloudinary, {
+  isCloudinaryConfigured,
+} from "./cloudinary";
+
+export interface CloudinaryUploadResult {
+  url: string;
+  publicId: string;
+  format?: string;
+  bytes?: number;
+}
 
 export async function uploadFileToCloudinary(
   file: File,
-  folder: string
-) {
+  folder: string,
+): Promise<CloudinaryUploadResult> {
   if (!isCloudinaryConfigured()) {
     throw new Error("Cloudinary is not configured.");
   }
