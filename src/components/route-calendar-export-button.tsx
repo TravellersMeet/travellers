@@ -93,7 +93,7 @@ export default function RouteCalendarExportButton({
       );
 
       const calendarRoute: CalendarRoute = {
-        id: route.id,
+        id: route.id ?? crypto.randomUUID(),
         title:
           route.tripName?.trim() ||
           `${origin} to ${destination}`,
