@@ -36,6 +36,7 @@ function makeGetRequest(url: string): any {
   return {
     url,
     method: "GET",
+    headers: new Headers(),
   } as any;
 }
 

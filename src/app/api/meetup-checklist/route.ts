@@ -43,7 +43,13 @@ export async function PATCH(req: NextRequest) {
       id: body.id,
     },
     data: {
-      completed: body.completed,
+      ...(body.completed !== undefined && {
+        completed: body.completed,
+      }),
+
+      ...(body.text !== undefined && {
+        text: body.text,
+      }),
     },
   });
 
