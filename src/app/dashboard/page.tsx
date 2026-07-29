@@ -5,6 +5,7 @@ import FindMatchesButton from "@/components/FindMatchesButton";
 import DashboardMatches from "@/components/DashboardMatches";
 import type { Metadata } from "next";
 import DashboardClient from "@/components/DashboardClient";
+import TravelHeatmap from "@/components/spatial/TravelHeatmap";
 
 export const metadata: Metadata = {
   title: "Dashboard",
@@ -65,6 +66,10 @@ export default async function DashboardPage() {
   return (
     <main className="mx-auto max-w-4xl px-6 py-12">
       <DashboardClient initialOnboarded={onboarded} />
+
+      <div className="mb-10">
+        <TravelHeatmap />
+      </div>
 
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">Your trips</h1>
