@@ -36,6 +36,17 @@ const ACTIVE_DUPLICATE_STATUSES: TicketStatus[] = [
   TicketStatus.VERIFIED,
 ];
 
+function isFileLike(value: unknown): value is { size: number; type: string } {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "size" in value &&
+    "type" in value &&
+    typeof (value as { size?: unknown }).size === "number" &&
+    typeof (value as { type?: unknown }).type === "string"
+  );
+}
+
 const ticketSchema = z.object({
   destination: z
     .string()
@@ -56,24 +67,19 @@ const ticketSchema = z.object({
   ),
   file: z
     .any()
+    .refine((value) => isFileLike(value), "File required")
     .refine(
-      (value) => value instanceof File,
+      (value) => isFileLike(value) && value.size > 0,
       "File required",
     )
     .refine(
       (value) =>
-        value instanceof File && value.size > 0,
-      "File required",
-    )
-    .refine(
-      (value) =>
-        value instanceof File &&
-        value.size <= MAX_FILE_SIZE,
+        isFileLike(value) && value.size <= MAX_FILE_SIZE,
       "File size exceeds 10MB",
     )
     .refine(
       (value) =>
-        value instanceof File &&
+        isFileLike(value) &&
         ALLOWED_TYPES.includes(value.type),
       "Unsupported file type",
     ),

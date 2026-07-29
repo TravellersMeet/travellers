@@ -30,7 +30,7 @@ jobs:
       - name: Generate Prisma client
         run: npx prisma generate
       - name: Lint
-        run: npm run lint -- --no-cache || (echo "Lint failed. Showing ESLint output with direct runner..." && npx eslint . --max-warnings=0 && exit 1)
+        run: npm run lint -- --no-cache
       - name: Type check
         run: npx tsc --noEmit
       - name: Build
