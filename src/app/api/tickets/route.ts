@@ -230,7 +230,6 @@ export const POST = withValidation(
         departureDate: ticket.departureDate,
       });
 
-      return NextResponse.json({
       const body = {
         ok: true,
         ticket,
@@ -254,12 +253,12 @@ export const POST = withValidation(
           await deleteCloudinaryAsset(
             uploadedPublicId,
           );
-        } catch (cleanupError) {
+        } catch (cleanupError: unknown) {
           console.error(
             "Cloudinary cleanup failed after ticket creation error:",
             cleanupError instanceof Error
               ? cleanupError.message
-              : cleanupError,
+              : String(cleanupError),
           );
         }
       }
