@@ -265,6 +265,7 @@ if (!inputText.trim() && !selectedRoute) {
       route,
       createdAt: new Date().toISOString(),
       senderId: currentUser.id,
+      isSending: true,
       sender: {
         id: currentUser.id,
         name: currentUser.name || "You",
@@ -622,7 +623,7 @@ if (!inputText.trim() && !selectedRoute) {
                   return (
                     <div 
                       key={msg.id} 
-                      className={`flex flex-col ${isMe ? "items-end" : "items-start"}`}
+                      className={`flex flex-col ${isMe ? "items-end" : "items-start"} ${msg.isSending ? "opacity-60" : "opacity-100"} transition-opacity duration-200`}
                     >
                       {!isMe && showSenderHeader && (
                         <span className="text-[9px] text-slate-400 ml-1 mb-1 font-medium">
@@ -651,7 +652,7 @@ if (!inputText.trim() && !selectedRoute) {
 )}
                       </div>
                       <span className="text-[8px] text-slate-400 mt-1 mx-1">
-                        {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        {msg.isSending ? "Sending..." : new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       </span>
                     </div>
                   );
