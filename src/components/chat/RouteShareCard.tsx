@@ -1,6 +1,7 @@
 "use client";
 
-import { MapPin, Navigation, Clock } from "lucide-react";
+import { MapPin, Navigation, Clock, Flag, Route, } from "lucide-react";
+import { RouteViewer } from "@/components/route-viewer";
 
 interface RouteShareCardProps {
   route: {
@@ -20,14 +21,11 @@ interface RouteShareCardProps {
     duration: number;
 
     encodedPolyline: string;
-  };
-
-  onView?: () => void;
+  }
 }
 
 export default function RouteShareCard({
   route,
-  onView,
 }: RouteShareCardProps) {
   const distanceKm = (route.distance / 1000).toFixed(1);
 
@@ -38,15 +36,15 @@ export default function RouteShareCard({
   const mins = durationMinutes % 60;
 
   return (
-    <div className="mt-2 rounded-xl border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-slate-900 overflow-hidden">
+    <div className="mt-2 overflow-hidden rounded-2xl border border-blue-200 bg-blue-50 shadow-sm transition-all hover:border-blue-300 hover:shadow-md dark:border-blue-800 dark:bg-slate-900">
 
-      <div className="p-4">
+      <div className="p-5">
 
-        <div className="flex items-center gap-2 mb-3">
+        <div className="mb-4 flex items-center gap-2">
 
-          <Navigation className="w-4 h-4 text-blue-600" />
+  <Navigation className="h-5 w-5 text-blue-600" />
 
-          <h4 className="font-semibold text-sm">
+  <h4 className="text-base font-semibold text-slate-900 dark:text-white">
             {route.tripName || "Shared Route"}
           </h4>
 
@@ -54,50 +52,69 @@ export default function RouteShareCard({
 
         <div className="space-y-2 text-xs">
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-start gap-3">
 
-            <MapPin className="w-3 h-3 text-green-600" />
+  <MapPin className="mt-0.5 h-4 w-4 flex-shrink-0 text-green-600" />
 
-            <span>
-              {route.originName ??
-                `${route.originLat.toFixed(4)}, ${route.originLng.toFixed(4)}`}
-            </span>
+  <div>
 
-          </div>
+    <p className="text-[11px] uppercase tracking-wide text-slate-500">
+      Origin
+    </p>
 
-          <div className="flex items-center gap-2">
+    <p className="text-sm text-slate-900 dark:text-white">
+      {route.originName ??
+        `${route.originLat.toFixed(4)}, ${route.originLng.toFixed(4)}`}
+    </p>
 
-            <MapPin className="w-3 h-3 text-red-600" />
+  </div>
 
-            <span>
-              {route.destinationName ??
-                `${route.destinationLat.toFixed(4)}, ${route.destinationLng.toFixed(4)}`}
-            </span>
+</div>
 
-          </div>
+<div className="ml-2 h-4 w-px bg-slate-300 dark:bg-slate-700" />
 
-          <div className="flex items-center gap-4 pt-2">
+<div className="flex items-start gap-3">
 
-            <span>{distanceKm} km</span>
+  <Flag className="mt-0.5 h-4 w-4 flex-shrink-0 text-red-600" />
 
-            <span className="flex items-center gap-1">
-              <Clock className="w-3 h-3" />
+  <div>
 
-              {hours > 0
-                ? `${hours}h ${mins}m`
-                : `${mins} min`}
-            </span>
+    <p className="text-[11px] uppercase tracking-wide text-slate-500">
+      Destination
+    </p>
 
-          </div>
+    <p className="text-sm text-slate-900 dark:text-white">
+      {route.destinationName ??
+        `${route.destinationLat.toFixed(4)}, ${route.destinationLng.toFixed(4)}`}
+    </p>
+
+  </div>
+
+</div>
+
+          <div className="mt-4 flex flex-wrap gap-2">
+
+  <div className="flex items-center gap-1 rounded-full bg-white px-3 py-1 text-xs font-medium text-slate-700 shadow-sm dark:bg-slate-800 dark:text-slate-200">
+    <Route className="h-3 w-3" />
+    {distanceKm} km
+  </div>
+
+  <div className="flex items-center gap-1 rounded-full bg-white px-3 py-1 text-xs font-medium text-slate-700 shadow-sm dark:bg-slate-800 dark:text-slate-200">
+    <Clock className="h-3 w-3" />
+    {hours > 0 ? `${hours}h ${mins}m` : `${mins} min`}
+  </div>
+
+</div>
 
         </div>
 
-        <button
-          onClick={onView}
-          className="mt-4 w-full rounded-lg bg-blue-600 hover:bg-blue-700 text-white py-2 text-xs font-semibold transition"
-        >
-          View Route
-        </button>
+        <div className="mt-5 overflow-hidden rounded-xl border border-slate-200 shadow-sm dark:border-slate-700">
+  <RouteViewer
+    routeId={route.id}
+    allowCaching
+    showControls
+  />
+</div>
 
       </div>
 

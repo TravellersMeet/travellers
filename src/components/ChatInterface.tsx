@@ -9,6 +9,7 @@ import {
   MapPin, Calendar, Loader2, Sparkles, Inbox, RefreshCw 
 } from "lucide-react";
 import TripBoard from "@/components/TripBoard";
+import RouteShareCard from "@/components/chat/RouteShareCard";
 
 interface User {
   id: string;
@@ -636,18 +637,10 @@ if (!inputText.trim() && !selectedRoute) {
                         }`}
                       >
                         {msg.route && (
-  <div className="mb-3 rounded-lg border border-blue-200 bg-blue-50 dark:bg-slate-900 p-3">
-    <div className="font-semibold text-sm">
-      📍 {msg.route.tripName || "Shared Route"}
-    </div>
-
-    <div className="text-xs mt-1">
-      {msg.route.originName} → {msg.route.destinationName}
-    </div>
-
-    <div className="text-xs text-slate-500 mt-1">
-      {(msg.route.distance / 1000).toFixed(1)} km
-    </div>
+  <div className="mb-3">
+    <RouteShareCard
+      route={msg.route}
+    />
   </div>
 )}
 

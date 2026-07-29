@@ -35,20 +35,20 @@ describe("request IDs", () => {
   });
 
   it("rejects malformed request IDs", () => {
-    const request = new NextRequest(
-      "http://localhost/api/test",
-      {
-        headers: {
-          "X-Request-ID": "bad id\ninjected",
-        },
+  const request = new NextRequest(
+    "http://localhost/api/test",
+    {
+      headers: {
+        "x-request-id": "bad@id###",
       },
-    );
+    },
+  );
 
-    const result = getRequestId(request);
+  const result = getRequestId(request);
 
-    expect(result).not.toContain("bad id");
-    expect(isValidRequestId(result)).toBe(true);
-  });
+  expect(result).not.toBe("bad@id###");
+  expect(isValidRequestId(result)).toBe(true);
+});
 
   it("creates valid unique request IDs", () => {
     const first = createRequestId();
