@@ -342,7 +342,14 @@ export async function GET(req: NextRequest) {
     const matches = await prisma.ticket.findMany({
       where: whereClause,
       take: 100,
-      include: {
+      select: {
+        id: true,
+        destination: true,
+        departureDate: true,
+        status: true,
+        ticketUrl: true,
+        userId: true,
+        createdAt: true,
         user: {
           select: {
             id: true,
