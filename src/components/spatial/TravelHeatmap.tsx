@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Map, { Source, Layer } from "react-map-gl/maplibre";
+import Map, { Source, Layer } from "@vis.gl/react-maplibre";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { Loader2 } from "lucide-react";
 
