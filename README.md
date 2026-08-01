@@ -262,7 +262,7 @@ We welcome contributions from developers of all skill levels!
 We appreciate all contributions from our amazing community! 🎉
 
 <a href="https://github.com/singh-odyssey/travellers/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=singh-odyssey/travellers&v=2" />
+  <img src="https://contrib.rocks/image?repo=singh-odyssey/travellers&v=3" />
 </a>
 
 *Made with [contrib.rocks](https://contrib.rocks)*
