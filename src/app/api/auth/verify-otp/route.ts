@@ -1,7 +1,7 @@
 import prisma from "@/lib/prisma";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { isValidOTPFormat } from "@/lib/otp";
+import { isValidOTPFormat, verifyOTP } from "@/lib/otp";
 import { withValidation } from "@/lib/withValidation";
 import {
   applyRateLimitHeaders,
@@ -85,8 +85,8 @@ export const POST = withValidation(verifySchema, async (req, data) => {
       ) as NextResponse;
     }
 
-    // Verify OTP
-    if (user.otp !== otp) {
+    // Verify OTP against the stored hash (constant-time).
+    if (!verifyOTP(otp, user.otp)) {
       return applyRateLimitHeaders(
         NextResponse.json(
           { error: "Invalid OTP" },

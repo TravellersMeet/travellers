@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { hash } from "bcryptjs";
 import { z } from "zod";
 
-import { generateOTP } from "@/lib/otp";
+import { generateOTP, hashOTP } from "@/lib/otp";
 import { sendOTPEmail } from "@/lib/email";
 import { withValidation } from "@/lib/withValidation";
 import {
@@ -70,7 +70,7 @@ export const POST = withValidation(
           name,
           email,
           passwordHash,
-          otp,
+          otp: hashOTP(otp),
           otpExpires,
         },
       });
