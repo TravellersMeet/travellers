@@ -1,7 +1,7 @@
 import prisma from "@/lib/prisma";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { generateOTP } from "@/lib/otp";
+import { generateOTP, hashOTP } from "@/lib/otp";
 import { sendOTPEmail } from "@/lib/email";
 import { withValidation } from "@/lib/withValidation";
 import {
@@ -60,7 +60,7 @@ export const POST = withValidation(resendSchema, async (req, data) => {
     // Update user with new OTP
     await prisma.user.update({
       where: { email },
-      data: { otp, otpExpires },
+      data: { otp: hashOTP(otp), otpExpires },
     });
 
     // Send OTP email
