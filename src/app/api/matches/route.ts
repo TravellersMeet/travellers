@@ -339,9 +339,13 @@ export async function GET(req: NextRequest) {
       whereClause.user = userWhere;
     }
 
+    // Relevance is scored/sorted in memory, so the full candidate set (bounded
+    // by the destination + date-window + status filters in whereClause) has to
+    // be fetched to rank correctly and report an accurate total. The result is
+    // cached below, so this scan runs once per window and every subsequent page
+    // is served from the cache rather than re-querying.
     const matches = await prisma.ticket.findMany({
       where: whereClause,
-      take: 100,
       select: {
         id: true,
         destination: true,
