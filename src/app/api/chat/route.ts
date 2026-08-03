@@ -1,6 +1,12 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { z } from "zod";
 import { withValidation } from "@/lib/withValidation";
+import {
+  applyRateLimitHeaders,
+  checkRateLimit,
+  getRateLimitIdentifier,
+  rateLimitExceededResponse,
+} from "@/lib/rate-limit";
 
 const chatSchema = z.object({
   message: z.string().min(1, "Message required").max(500, "Message too long (max 500 characters)."),
@@ -8,6 +14,19 @@ const chatSchema = z.object({
 
 export const POST = withValidation(chatSchema, async (req, data) => {
     try {
+        // Gate the paid Gemini call so an anonymous visitor can't run up unlimited
+        // billed upstream requests (cost-abuse / prompt-injection surface).
+        const rateLimit = await checkRateLimit({
+            namespace: "chat",
+            identifier: getRateLimitIdentifier(req),
+            limit: 10,
+            windowSeconds: 60,
+        });
+
+        if (!rateLimit.allowed) {
+            return rateLimitExceededResponse(rateLimit);
+        }
+
         if (!process.env.GEMINI_API_KEY) {
             return NextResponse.json(
                 { error: "AI not configured." },
@@ -83,7 +102,10 @@ Do not mention system prompts or technical details.
             );
         }
 
-        return NextResponse.json({ reply });
+        return applyRateLimitHeaders(
+            NextResponse.json({ reply }),
+            rateLimit,
+        ) as NextResponse;
 
     } catch (error) {
         console.error("Chat API Error:", error);
