@@ -15,22 +15,22 @@ model User {
   image        String? @db.Text // Profile avatar (base64 data URI)
 
   // ✅ NEW PROFILE FIELDS (Safe Additions)
-  bio                 String?     @db.Text
-  location            String?
-  homeLocation        String?
-  phone               String?
-  isDeleted           Boolean     @default(false)  // Soft delete support
-  onboarded           Boolean     @default(false)  // Onboarding status
+  bio          String? @db.Text
+  location     String?
+  homeLocation String?
+  phone        String?
+  isDeleted    Boolean @default(false) // Soft delete support
+  onboarded    Boolean @default(false) // Onboarding status
 
   // ✅ EXPANDED TRAVELER PROFILE FIELDS
-  languages           String[]
-  travelInterests     String[]
-  accommodationPrefs  String[]
-  budgetRange         String?
-  socialLinks         String[]
-  age                 Int?
-  gender              String?
-  travelStyle         String?
+  languages          String[]
+  travelInterests    String[]
+  accommodationPrefs String[]
+  budgetRange        String?
+  socialLinks        String[]
+  age                Int?
+  gender             String?
+  travelStyle        String?
 
   role              Role      @default(USER)
   emailVerified     Boolean   @default(false)
@@ -94,18 +94,17 @@ model Ticket {
   destination   String
   departureDate DateTime
   ticketUrl     String
-  status        TicketStatus  @default(PENDING)
+  status        TicketStatus @default(PENDING)
   tripPurpose   String?
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
 
   @@index([destination, departureDate])
   @@index([userId])
 }
 
 model Notification {
-  id String @id @default(cuid())
-
+  id     String @id @default(cuid())
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
   userId String
 
@@ -116,13 +115,17 @@ model Notification {
 
   read Boolean @default(false)
 
-  link String?
+  link      String?
+  dedupeKey String?
+  expiresAt DateTime?
 
   createdAt DateTime @default(now())
 
+  @@unique([userId, dedupeKey])
   @@index([userId])
   @@index([read])
   @@index([createdAt])
+  @@index([expiresAt])
 }
 
 enum TicketStatus {
