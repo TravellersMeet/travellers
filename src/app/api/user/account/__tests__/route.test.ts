@@ -15,6 +15,15 @@ vi.mock("@/lib/auth", () => ({
   auth: vi.fn(),
 }));
 
+type MockAuth = {
+  mockResolvedValue: (
+    value: unknown,
+  ) => void;
+};
+
+const mockedAuth =
+  auth as unknown as MockAuth;
+
 vi.mock("@/lib/account-deletion", () => ({
   deleteUserAccount: vi.fn(),
 }));
@@ -43,7 +52,7 @@ describe("DELETE /api/user/account", () => {
   });
 
   it("returns 401 for unauthenticated users", async () => {
-    vi.mocked(auth).mockResolvedValue(null);
+    mockedAuth.mockResolvedValue(null);
 
     const response = await DELETE(createRequest());
 
@@ -52,11 +61,11 @@ describe("DELETE /api/user/account", () => {
   });
 
   it("requires exact deletion confirmation", async () => {
-    vi.mocked(auth).mockResolvedValue({
+    mockedAuth.mockResolvedValue({
       user: {
         id: "user-1",
       },
-    } as never);
+    });
 
     const response = await DELETE(
       createRequest("delete"),
@@ -67,11 +76,11 @@ describe("DELETE /api/user/account", () => {
   });
 
   it("clears auth data and reports pending asset cleanup", async () => {
-    vi.mocked(auth).mockResolvedValue({
+    mockedAuth.mockResolvedValue({
       user: {
         id: "user-1",
       },
-    } as never);
+    });
     vi.mocked(deleteUserAccount).mockResolvedValue({
       alreadyDeleted: false,
       queuedAssets: 2,
@@ -101,11 +110,11 @@ describe("DELETE /api/user/account", () => {
   });
 
   it("returns a safe error when the transaction fails", async () => {
-    vi.mocked(auth).mockResolvedValue({
+    mockedAuth.mockResolvedValue({
       user: {
         id: "user-1",
       },
-    } as never);
+    });
     vi.mocked(deleteUserAccount).mockRejectedValue(
       new Error(
         "postgresql://secret:password@host/db",
