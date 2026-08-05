@@ -323,3 +323,22 @@ model Message {
   @@index([senderId])
   @@index([routeId])
 }
+
+model AssetCleanupJob {
+  id String @id @default(cuid())
+
+  ownerId  String
+  publicId String
+
+  attempts     Int       @default(0)
+  completedAt  DateTime?
+  lastError    String?
+  nextAttemptAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([ownerId, publicId])
+  @@index([ownerId, completedAt])
+  @@index([completedAt, nextAttemptAt])
+}
