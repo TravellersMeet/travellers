@@ -20,9 +20,15 @@ export async function GET(req: NextRequest) {
     return NextResponse.json([]);
   }
 
+  // Only return the plan if the caller is a member of its conversation,
+  // otherwise any authenticated user could read another conversation's plan
+  // by guessing the conversationId.
   const plan = await prisma.meetupPlan.findFirst({
     where: {
       conversationId,
+      conversation: {
+        users: { some: { id: session.user.id } },
+      },
     },
     include: {
       checklist: true,
@@ -52,8 +58,24 @@ export async function POST(req: NextRequest) {
     notes,
     routeId,
   } = body;
- 
-  console.log(prisma);
+
+  // The caller must belong to the conversation they're creating a plan in,
+  // otherwise they could attach a meetup plan to any conversation.
+  const conversation = await prisma.conversation.findFirst({
+    where: {
+      id: conversationId,
+      users: { some: { id: session.user.id } },
+    },
+    select: { id: true },
+  });
+
+  if (!conversation) {
+    return NextResponse.json(
+      { error: "Forbidden" },
+      { status: 403 }
+    );
+  }
+
   const meetup = await prisma.meetupPlan.create({
   data: {
     conversationId,
