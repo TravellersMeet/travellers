@@ -128,6 +128,25 @@ export async function POST(req: NextRequest) {
 
   try {
     if (action === "send") {
+      // Blocks are two-way: don't allow a request if either user has blocked
+      // the other.
+      const block = await prisma.block.findFirst({
+        where: {
+          OR: [
+            { blockerId: currentUserId, blockedId: userId },
+            { blockerId: userId, blockedId: currentUserId },
+          ],
+        },
+        select: { id: true },
+      });
+
+      if (block) {
+        return NextResponse.json(
+          { error: "Unable to send a connection request to this user" },
+          { status: 403 }
+        );
+      }
+
       // Check for existing connection request
       const existing = await prisma.connectionRequest.findFirst({
         where: {
