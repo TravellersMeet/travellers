@@ -127,6 +127,22 @@ if ((!text || text.trim() === "") && !routeId) {
       return NextResponse.json({ error: "Conversation not found" }, { status: 404 });
     }
 
+    // A shared route must belong to the sender — otherwise a user could attach
+    // (and expose the details of) another user's route by passing its id.
+    if (routeId) {
+      const route = await prisma.route.findFirst({
+        where: { id: routeId, userId },
+        select: { id: true },
+      });
+
+      if (!route) {
+        return NextResponse.json(
+          { error: "Route not found or not owned by you" },
+          { status: 403 }
+        );
+      }
+    }
+
     // Save message and update conversation's updatedAt timestamp
     const [message] = await prisma.$transaction([
   prisma.message.create({
