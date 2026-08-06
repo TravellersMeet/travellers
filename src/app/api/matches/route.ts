@@ -180,10 +180,14 @@ export async function GET(req: NextRequest) {
       },
     });
 
+    // Blocks are two-way: exclude both users I've blocked and users who have
+    // blocked me. Previously only { blockerId: currentUserId } was queried, so
+    // a user who blocked me still showed up in my matches.
     const blocks = await prisma.block.findMany({
       where: {
         OR: [
           { blockerId: currentUserId },
+          { blockedId: currentUserId },
         ],
       },
       select: {
