@@ -8,10 +8,9 @@ import { sendOTPEmail } from "@/lib/email";
 import { withValidation } from "@/lib/withValidation";
 import {
   applyRateLimitHeaders,
-  checkRateLimit,
-  getRateLimitIdentifier,
   rateLimitExceededResponse,
 } from "@/lib/rate-limit";
+import { enforceRateLimit } from "@/lib/rate-limit-rules";
 
 const signupSchema = z.object({
   name: z.string().min(1, "Name required"),
@@ -27,12 +26,7 @@ export const POST = withValidation(
     try {
       const { name, email, password } = data;
 
-      const rateLimit = await checkRateLimit({
-        namespace: "auth:signup",
-        identifier: getRateLimitIdentifier(_req, email),
-        limit: 5,
-        windowSeconds: 60 * 60,
-      });
+      const rateLimit = await enforceRateLimit(_req, "authSignup", email);
 
       if (!rateLimit.allowed) {
         return rateLimitExceededResponse(rateLimit);

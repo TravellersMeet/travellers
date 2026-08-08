@@ -5,10 +5,9 @@ import { isValidOTPFormat, verifyOTP } from "@/lib/otp";
 import { withValidation } from "@/lib/withValidation";
 import {
   applyRateLimitHeaders,
-  checkRateLimit,
-  getRateLimitIdentifier,
   rateLimitExceededResponse,
 } from "@/lib/rate-limit";
+import { enforceRateLimit } from "@/lib/rate-limit-rules";
 
 const verifySchema = z.object({
   email: z.string().email("Invalid email"),
@@ -19,12 +18,7 @@ export const POST = withValidation(verifySchema, async (req, data) => {
   try {
     const { email, otp } = data;
 
-    const rateLimit = await checkRateLimit({
-      namespace: "auth:verify-otp",
-      identifier: getRateLimitIdentifier(req, email),
-      limit: 10,
-      windowSeconds: 10 * 60,
-    });
+    const rateLimit = await enforceRateLimit(req, "authVerifyOtp", email);
 
     if (!rateLimit.allowed) {
       return rateLimitExceededResponse(rateLimit);
