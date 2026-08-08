@@ -8,6 +8,11 @@ import {
   PaginationError,
   parsePaginationParams,
 } from "@/lib/pagination";
+import {
+  applyRateLimitHeaders,
+  rateLimitExceededResponse,
+} from "@/lib/rate-limit";
+import { enforceRateLimit } from "@/lib/rate-limit-rules";
 import { triggerPusher } from "@/lib/pusher";
 
 const BLOCKED_CONVERSATION_ERROR =
@@ -171,6 +176,19 @@ export async function POST(req: NextRequest) {
   }
 
   const userId = session.user.id;
+
+  // Each message is a row plus one Pusher event per participant, so an
+  // unthrottled loop here costs both storage and billed Pusher quota.
+  const rateLimit = await enforceRateLimit(
+    req,
+    "messageSend",
+    userId,
+  );
+
+  if (!rateLimit.allowed) {
+    return rateLimitExceededResponse(rateLimit);
+  }
+
   let body;
   try {
     body = await req.json();
@@ -274,7 +292,10 @@ if ((!text || text.trim() === "") && !routeId) {
       )
     );
 
-    return NextResponse.json({ success: true, message });
+    return applyRateLimitHeaders(
+      NextResponse.json({ success: true, message }),
+      rateLimit,
+    ) as NextResponse;
   } catch (error) {
     console.error("Send message error:", error);
     return NextResponse.json({ error: "Server error" }, { status: 500 });

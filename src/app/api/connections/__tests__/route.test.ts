@@ -31,6 +31,19 @@ vi.mock("@/lib/pusher", () => ({
   triggerPusher: vi.fn(() => Promise.resolve()),
 }));
 
+/**
+ * The rate limiter reads `x-forwarded-for` to build its identifier, so a mock
+ * request needs a `headers` bag even when the header itself is absent.
+ */
+function postRequest(body: any) {
+  return {
+    headers: {
+      get: () => null,
+    },
+    json: async () => body,
+  };
+}
+
 describe("Connections API", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -62,9 +75,7 @@ describe("Connections API", () => {
       (prisma.connectionRequest.findFirst as any).mockResolvedValue(null);
       (prisma.connectionRequest.create as any).mockResolvedValue({ id: "req-1", senderId: "user-1", receiverId: "user-2" });
 
-      const req = {
-        json: async () => ({ action: "send", userId: "user-2" }),
-      };
+      const req = postRequest({ action: "send", userId: "user-2" });
 
       const res = await POST(req as any);
       const data = await res.json();
@@ -78,9 +89,7 @@ describe("Connections API", () => {
       (prisma.conversation.findFirst as any).mockResolvedValue(null);
       (prisma.conversation.create as any).mockResolvedValue({ id: "conv-1" });
 
-      const req = {
-        json: async () => ({ action: "accept", userId: "user-2" }),
-      };
+      const req = postRequest({ action: "accept", userId: "user-2" });
 
       const res = await POST(req as any);
       const data = await res.json();
@@ -93,9 +102,7 @@ describe("Connections API", () => {
     it("refuses to send a request when either side has blocked the other", async () => {
       (prisma.block.findFirst as any).mockResolvedValue({ id: "block-1" });
 
-      const req = {
-        json: async () => ({ action: "send", userId: "user-2" }),
-      };
+      const req = postRequest({ action: "send", userId: "user-2" });
 
       const res = await POST(req as any);
 
@@ -107,9 +114,7 @@ describe("Connections API", () => {
       (prisma.connectionRequest.findUnique as any).mockResolvedValue({ id: "req-1", senderId: "user-2", receiverId: "user-1", status: "PENDING" });
       (prisma.block.findFirst as any).mockResolvedValue({ id: "block-1" });
 
-      const req = {
-        json: async () => ({ action: "accept", userId: "user-2" }),
-      };
+      const req = postRequest({ action: "accept", userId: "user-2" });
 
       const res = await POST(req as any);
 

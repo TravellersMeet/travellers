@@ -2,6 +2,8 @@ import prisma from "@/lib/prisma";
 import { auth } from "@/lib/auth";
 import { NextRequest, NextResponse } from "next/server";
 import { isBlockedBetween } from "@/lib/blocking";
+import { rateLimitExceededResponse } from "@/lib/rate-limit";
+import { enforceRateLimit } from "@/lib/rate-limit-rules";
 import { triggerPusher } from "@/lib/pusher";
 
 export async function GET(req: NextRequest) {
@@ -110,6 +112,19 @@ export async function POST(req: NextRequest) {
   }
 
   const currentUserId = session.user.id;
+
+  // A `send` writes a notification and pushes an event onto somebody else's
+  // channel, which makes this the spam-facing endpoint of the pair.
+  const rateLimit = await enforceRateLimit(
+    req,
+    "connectionAction",
+    currentUserId,
+  );
+
+  if (!rateLimit.allowed) {
+    return rateLimitExceededResponse(rateLimit);
+  }
+
   let body;
   try {
     body = await req.json();

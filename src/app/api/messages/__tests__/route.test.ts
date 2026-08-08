@@ -42,6 +42,19 @@ function conversationWith(...userIds: string[]) {
   };
 }
 
+/**
+ * The rate limiter reads `x-forwarded-for` to build its identifier, so a mock
+ * request needs a `headers` bag even when the header itself is absent.
+ */
+function postRequest(body: any) {
+  return {
+    headers: {
+      get: () => null,
+    },
+    json: async () => body,
+  };
+}
+
 describe("Messages API", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -120,9 +133,7 @@ describe("Messages API", () => {
       (prisma.message.create as any).mockResolvedValue({ id: "msg-2", text: "New message" });
       (prisma.conversation.update as any).mockResolvedValue({ id: "conv-1" });
 
-      const req = {
-        json: async () => ({ conversationId: "conv-1", text: "New message" }),
-      };
+      const req = postRequest({ conversationId: "conv-1", text: "New message" });
 
       const res = await POST(req as any);
       const data = await res.json();
@@ -138,9 +149,7 @@ describe("Messages API", () => {
       (prisma.message.create as any).mockResolvedValue({ id: "msg-2", text: "New message" });
       (prisma.conversation.update as any).mockResolvedValue({ id: "conv-1" });
 
-      const req = {
-        json: async () => ({ conversationId: "conv-1", text: "New message" }),
-      };
+      const req = postRequest({ conversationId: "conv-1", text: "New message" });
 
       await POST(req as any);
 
@@ -163,9 +172,7 @@ describe("Messages API", () => {
       );
       (prisma.block.findFirst as any).mockResolvedValue({ id: "block-1" });
 
-      const req = {
-        json: async () => ({ conversationId: "conv-1", text: "Still here" }),
-      };
+      const req = postRequest({ conversationId: "conv-1", text: "Still here" });
 
       const res = await POST(req as any);
 
@@ -178,9 +185,7 @@ describe("Messages API", () => {
     it("returns 404 when the caller is not a participant", async () => {
       (prisma.conversation.findFirst as any).mockResolvedValue(null);
 
-      const req = {
-        json: async () => ({ conversationId: "conv-9", text: "Hello?" }),
-      };
+      const req = postRequest({ conversationId: "conv-9", text: "Hello?" });
 
       const res = await POST(req as any);
 
