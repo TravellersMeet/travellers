@@ -2,6 +2,12 @@ import prisma from "@/lib/prisma";
 import { auth } from "@/lib/auth";
 import { NextRequest, NextResponse } from "next/server";
 import { isBlockedBetween } from "@/lib/blocking";
+import {
+  buildTimestampCursorWhere,
+  createPaginatedResponse,
+  PaginationError,
+  parsePaginationParams,
+} from "@/lib/pagination";
 import { triggerPusher } from "@/lib/pusher";
 
 const BLOCKED_CONVERSATION_ERROR =
@@ -43,6 +49,42 @@ async function loadConversationForUser(
   };
 }
 
+/**
+ * Columns returned for a message. Kept in one place because `GET` (the history
+ * page) and `POST` (the echoed message) have to agree — the chat UI renders
+ * both through the same component.
+ */
+const MESSAGE_INCLUDE = {
+  sender: {
+    select: {
+      id: true,
+      name: true,
+      image: true,
+    },
+  },
+
+  route: {
+    select: {
+      id: true,
+      tripName: true,
+
+      originName: true,
+      destinationName: true,
+
+      originLat: true,
+      originLng: true,
+
+      destinationLat: true,
+      destinationLng: true,
+
+      distance: true,
+      duration: true,
+
+      encodedPolyline: true,
+    },
+  },
+} as const;
+
 export async function GET(req: NextRequest) {
   const session = await auth();
   if (!session?.user?.id) {
@@ -58,6 +100,14 @@ export async function GET(req: NextRequest) {
   }
 
   try {
+    const { limit, cursor } = parsePaginationParams(
+      url.searchParams,
+    );
+    const cursorWhere = buildTimestampCursorWhere(
+      "createdAt",
+      cursor,
+    );
+
     // Check if user is participant of conversation
     const conversation = await loadConversationForUser(conversationId, userId);
 
@@ -74,45 +124,41 @@ export async function GET(req: NextRequest) {
       );
     }
 
+    // Newest first so the default page is the bottom of the thread, which is
+    // what the chat opens on. The cursor then walks backwards through history.
     const messages = await prisma.message.findMany({
-  where: { conversationId },
-  orderBy: {
-    createdAt: "asc",
-  },
-  include: {
-    sender: {
-      select: {
-        id: true,
-        name: true,
-        image: true,
+      where: {
+        conversationId,
+        ...(cursorWhere ?? {}),
       },
-    },
+      orderBy: [
+        { createdAt: "desc" },
+        { id: "desc" },
+      ],
+      take: limit + 1,
+      include: MESSAGE_INCLUDE,
+    });
 
-    route: {
-      select: {
-        id: true,
-        tripName: true,
+    const result = createPaginatedResponse(
+      messages,
+      limit,
+      "createdAt",
+    );
 
-        originName: true,
-        destinationName: true,
-
-        originLat: true,
-        originLng: true,
-
-        destinationLat: true,
-        destinationLng: true,
-
-        distance: true,
-        duration: true,
-
-        encodedPolyline: true,
-      },
-    },
-  },
-});
-
-    return NextResponse.json({ messages });
+    return NextResponse.json({
+      ...result,
+      // Alias retained for existing API consumers, re-sorted oldest-first
+      // because that is the order the transcript is rendered in.
+      messages: [...result.items].reverse(),
+    });
   } catch (error) {
+    if (error instanceof PaginationError) {
+      return NextResponse.json(
+        { error: error.message },
+        { status: 400 },
+      );
+    }
+
     console.error("Fetch messages error:", error);
     return NextResponse.json({ error: "Server error" }, { status: 500 });
   }
@@ -196,30 +242,7 @@ if ((!text || text.trim() === "") && !routeId) {
       text: text?.trim() ?? "",
       routeId: routeId ?? null,
     },
-    include: {
-      sender: {
-        select: {
-          id: true,
-          name: true,
-          image: true,
-        },
-      },
-      route: {
-        select: {
-          id: true,
-          tripName: true,
-          originName: true,
-          destinationName: true,
-          originLat: true,
-          originLng: true,
-          destinationLat: true,
-          destinationLng: true,
-          distance: true,
-          duration: true,
-          encodedPolyline: true,
-        },
-      },
-    },
+    include: MESSAGE_INCLUDE,
   }),
 
   prisma.conversation.update({

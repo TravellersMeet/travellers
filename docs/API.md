@@ -241,6 +241,69 @@ Response:
 }
 ```
 
+## Messaging endpoints
+
+### `GET /api/messages?conversationId=<id>`
+
+Return a page of the conversation transcript. The caller must be a participant,
+otherwise the endpoint responds `404`.
+
+Query parameters:
+
+| Name | Default | Notes |
+| --- | --- | --- |
+| `conversationId` | — | Required. |
+| `limit` | `20` | Capped at `100`. |
+| `cursor` | — | Opaque cursor from a previous `pagination.nextCursor`. |
+
+Response:
+
+```json
+{
+  "items": [{ "id": "msg-3", "text": "See you at the gate", "createdAt": "..." }],
+  "pagination": {
+    "limit": 20,
+    "nextCursor": "eyJ2ZXJzaW9uIjoxLCJ0aW1lc3RhbXAiOiIuLi4iLCJpZCI6Im1zZy0yIn0",
+    "hasMore": true
+  },
+  "messages": [{ "id": "msg-1", "text": "Landing at 6", "createdAt": "..." }]
+}
+```
+
+Two orderings are returned deliberately:
+
+- `items` is newest-first, matching the query order, so `pagination.nextCursor`
+  lines up with the last element.
+- `messages` is the same page re-sorted oldest-first, which is the order a chat
+  transcript is rendered in. Pass `pagination.nextCursor` back as `cursor` to
+  walk further into the past and prepend the result.
+
+`400` is returned for a malformed `limit` or `cursor`.
+
+### `POST /api/messages`
+
+Send a message to a conversation the caller belongs to. Either `text` or
+`routeId` must be present.
+
+Request body:
+
+```json
+{
+  "conversationId": "conv-1",
+  "text": "Booked the 7am bus",
+  "routeId": "route-1"
+}
+```
+
+A `routeId` must belong to the sender; otherwise the endpoint responds `403`.
+On success the created message is broadcast over Pusher to the conversation
+channel and to each participant's personal channel.
+
+### `GET /api/conversations`
+
+List the caller's conversations, most recently updated first, each with the
+other participant and the latest message for the sidebar.
+
 ## AI chat endpoint
 
 ### `POST /api/chat`
