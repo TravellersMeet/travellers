@@ -1,7 +1,47 @@
 import prisma from "@/lib/prisma";
 import { auth } from "@/lib/auth";
 import { NextRequest, NextResponse } from "next/server";
+import { isBlockedBetween } from "@/lib/blocking";
 import { triggerPusher } from "@/lib/pusher";
+
+const BLOCKED_CONVERSATION_ERROR =
+  "This conversation is unavailable because one of you has blocked the other";
+
+/**
+ * Loads a conversation only if the caller belongs to it, along with the ids of
+ * the other participants so callers can run a block check without a second
+ * round-trip.
+ */
+async function loadConversationForUser(
+  conversationId: string,
+  userId: string,
+): Promise<{ id: string; counterpartIds: string[] } | null> {
+  const conversation = await prisma.conversation.findFirst({
+    where: {
+      id: conversationId,
+      users: {
+        some: { id: userId },
+      },
+    },
+    select: {
+      id: true,
+      users: { select: { id: true } },
+    },
+  });
+
+  if (!conversation) {
+    return null;
+  }
+
+  const users: Array<{ id: string }> = conversation.users ?? [];
+
+  return {
+    id: conversation.id,
+    counterpartIds: users
+      .map((user) => user.id)
+      .filter((id) => id !== userId),
+  };
+}
 
 export async function GET(req: NextRequest) {
   const session = await auth();
@@ -19,17 +59,19 @@ export async function GET(req: NextRequest) {
 
   try {
     // Check if user is participant of conversation
-    const conversation = await prisma.conversation.findFirst({
-      where: {
-        id: conversationId,
-        users: {
-          some: { id: userId },
-        },
-      },
-    });
+    const conversation = await loadConversationForUser(conversationId, userId);
 
     if (!conversation) {
       return NextResponse.json({ error: "Conversation not found" }, { status: 404 });
+    }
+
+    // A block hides the history in both directions, so neither side can keep
+    // reading the thread after one of them blocked the other.
+    if (await isBlockedBetween(userId, conversation.counterpartIds)) {
+      return NextResponse.json(
+        { error: BLOCKED_CONVERSATION_ERROR },
+        { status: 403 },
+      );
     }
 
     const messages = await prisma.message.findMany({
@@ -114,17 +156,19 @@ if ((!text || text.trim() === "") && !routeId) {
 
   try {
     // Check if user is participant of conversation
-    const conversation = await prisma.conversation.findFirst({
-      where: {
-        id: conversationId,
-        users: {
-          some: { id: userId },
-        },
-      },
-    });
+    const conversation = await loadConversationForUser(conversationId, userId);
 
     if (!conversation) {
       return NextResponse.json({ error: "Conversation not found" }, { status: 404 });
+    }
+
+    // Blocks are two-way: the person who was blocked must not be able to keep
+    // messaging, and the blocker must not be able to message them either.
+    if (await isBlockedBetween(userId, conversation.counterpartIds)) {
+      return NextResponse.json(
+        { error: BLOCKED_CONVERSATION_ERROR },
+        { status: 403 },
+      );
     }
 
     // A shared route must belong to the sender — otherwise a user could attach
@@ -193,27 +237,19 @@ if ((!text || text.trim() === "") && !routeId) {
       message,
     });
 
-    // Also trigger update on user sidebars for conversation lists
-    // Fetch users in conversation to trigger sidebar updates
-    const users = await prisma.conversation.findUnique({
-      where: { id: conversationId },
-      select: {
-        users: {
-          select: { id: true },
-        },
-      },
-    });
+    // Also trigger update on user sidebars for conversation lists. The
+    // participant ids were already loaded for the membership and block checks,
+    // so there is no need to query the conversation a second time here.
+    const sidebarUserIds = [userId, ...conversation.counterpartIds];
 
-    if (users) {
-      await Promise.all(
-        users.users.map((u) =>
-          triggerPusher(`private-user-${u.id}`, "conversation-updated", {
-            conversationId,
-            lastMessage: message,
-          })
-        )
-      );
-    }
+    await Promise.all(
+      sidebarUserIds.map((id) =>
+        triggerPusher(`private-user-${id}`, "conversation-updated", {
+          conversationId,
+          lastMessage: message,
+        })
+      )
+    );
 
     return NextResponse.json({ success: true, message });
   } catch (error) {
