@@ -1,6 +1,7 @@
 import prisma from "@/lib/prisma";
 import { auth } from "@/lib/auth";
 import { NextRequest, NextResponse } from "next/server";
+import { isBlockedBetween } from "@/lib/blocking";
 import { triggerPusher } from "@/lib/pusher";
 
 export async function GET(req: NextRequest) {
@@ -130,17 +131,7 @@ export async function POST(req: NextRequest) {
     if (action === "send") {
       // Blocks are two-way: don't allow a request if either user has blocked
       // the other.
-      const block = await prisma.block.findFirst({
-        where: {
-          OR: [
-            { blockerId: currentUserId, blockedId: userId },
-            { blockerId: userId, blockedId: currentUserId },
-          ],
-        },
-        select: { id: true },
-      });
-
-      if (block) {
+      if (await isBlockedBetween(currentUserId, userId)) {
         return NextResponse.json(
           { error: "Unable to send a connection request to this user" },
           { status: 403 }
@@ -220,6 +211,16 @@ export async function POST(req: NextRequest) {
 
       if (!request || request.status !== "PENDING") {
         return NextResponse.json({ error: "No pending connection request found" }, { status: 404 });
+      }
+
+      // A block may have been created after the request was sent. Accepting it
+      // would open a conversation between two people who cannot message each
+      // other, so refuse instead of creating a dead thread.
+      if (await isBlockedBetween(currentUserId, userId)) {
+        return NextResponse.json(
+          { error: "Unable to accept a connection request from this user" },
+          { status: 403 }
+        );
       }
 
       // Update connection request

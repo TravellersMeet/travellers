@@ -1,6 +1,7 @@
 import prisma from "@/lib/prisma";
 import { auth } from "@/lib/auth";
 import { NextRequest, NextResponse } from "next/server";
+import { getBlockedUserIds } from "@/lib/blocking";
 
 export async function GET(req: NextRequest) {
   const session = await auth();
@@ -11,10 +12,17 @@ export async function GET(req: NextRequest) {
   const userId = session.user.id;
 
   try {
+    // Resolve the block set once instead of per conversation: a thread with
+    // somebody on either side of a block must not appear in the sidebar at all.
+    const blockedUserIds = await getBlockedUserIds(userId);
+
     const conversations = await prisma.conversation.findMany({
       where: {
         users: {
           some: { id: userId },
+          ...(blockedUserIds.length > 0
+            ? { none: { id: { in: blockedUserIds } } }
+            : {}),
         },
       },
       include: {

@@ -89,11 +89,15 @@ export default function ChatInterface({
   
   const [loadingConvs, setLoadingConvs] = useState(true);
   const [loadingMessages, setLoadingMessages] = useState(false);
+  const [loadingOlderMessages, setLoadingOlderMessages] = useState(false);
+  const [olderMessagesCursor, setOlderMessagesCursor] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const pusherSubscribedChats = useRef<Set<string>>(new Set());
+  // Set while prepending history so the "scroll to newest" effect stays put.
+  const skipScrollToBottom = useRef(false);
 
   // Fetch initial conversations and connection requests
   const fetchData = async () => {
@@ -121,19 +125,55 @@ export default function ChatInterface({
     fetchData();
   }, []);
 
-  // Fetch messages when active conversation changes
+  // Fetch the most recent page of messages when the active conversation
+  // changes. The endpoint returns newest-first internally but hands back
+  // `messages` oldest-first, which is the order the transcript renders in.
   const fetchMessages = async (convId: string) => {
     setLoadingMessages(true);
+    setOlderMessagesCursor(null);
     try {
       const res = await fetch(`/api/messages?conversationId=${convId}`);
       const data = await res.json();
       if (res.ok) {
         setMessages(data.messages || []);
+        setOlderMessagesCursor(data.pagination?.nextCursor ?? null);
       }
     } catch (error) {
       console.error("Error fetching messages:", error);
     } finally {
       setLoadingMessages(false);
+    }
+  };
+
+  // Walk further back through the thread, prepending each page.
+  const loadOlderMessages = async () => {
+    if (!activeConvId || !olderMessagesCursor || loadingOlderMessages) return;
+
+    setLoadingOlderMessages(true);
+    try {
+      const res = await fetch(
+        `/api/messages?conversationId=${activeConvId}&cursor=${encodeURIComponent(
+          olderMessagesCursor
+        )}`
+      );
+      const data = await res.json();
+
+      if (!res.ok) throw new Error(data.error || "Failed to load older messages");
+
+      const older = data.messages || [];
+
+      skipScrollToBottom.current = true;
+      setMessages((prev) => {
+        // A message can already be present if it arrived over Pusher while the
+        // page request was in flight.
+        const known = new Set(prev.map((m) => m.id));
+        return [...older.filter((m: any) => !known.has(m.id)), ...prev];
+      });
+      setOlderMessagesCursor(data.pagination?.nextCursor ?? null);
+    } catch (error) {
+      console.error("Error loading older messages:", error);
+    } finally {
+      setLoadingOlderMessages(false);
     }
   };
 
@@ -237,8 +277,13 @@ setShowMeetup(!!plan);
   loadMeetup();
 }, [activeConvId]);
 
-  // Scroll to bottom of message list on new messages
+  // Scroll to bottom of message list on new messages. Prepending older history
+  // must not yank the viewport back down, so that case opts out for one pass.
   useEffect(() => {
+    if (skipScrollToBottom.current) {
+      skipScrollToBottom.current = false;
+      return;
+    }
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, loadingMessages]);
 
@@ -615,7 +660,30 @@ if (!inputText.trim() && !selectedRoute) {
                   </p>
                 </div>
               ) : (
-                messages.map((msg, index) => {
+                <>
+                {olderMessagesCursor && (
+                  <div className="flex justify-center pb-2">
+                    <button
+                      type="button"
+                      onClick={loadOlderMessages}
+                      disabled={loadingOlderMessages}
+                      className="flex items-center gap-1.5 rounded-full border border-slate-200 dark:border-slate-700 px-3 py-1 text-[10px] font-semibold text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-60"
+                    >
+                      {loadingOlderMessages ? (
+                        <>
+                          <Loader2 className="animate-spin" size={12} />
+                          Loading older messages...
+                        </>
+                      ) : (
+                        <>
+                          <RefreshCw size={12} />
+                          Load older messages
+                        </>
+                      )}
+                    </button>
+                  </div>
+                )}
+                {messages.map((msg, index) => {
                   const isMe = msg.senderId === currentUser.id;
                   const showSenderHeader = index === 0 || messages[index - 1].senderId !== msg.senderId;
 
@@ -656,7 +724,8 @@ if (!inputText.trim() && !selectedRoute) {
                       </span>
                     </div>
                   );
-                })
+                })}
+                </>
               )}
               <div ref={messagesEndRef} />
             </div>
