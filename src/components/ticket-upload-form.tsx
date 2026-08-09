@@ -3,6 +3,10 @@
 import { useState, FormEvent, useRef} from "react";
 import { CloudUpload, CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
 
+function generateIdempotencyKey(): string {
+  return `${Date.now()}-${Math.random().toString(36).substring(2, 15)}`;
+}
+
 export default function TicketUploadForm() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -48,7 +52,15 @@ function handleDrop(e: React.DragEvent) {
     setSuccess(false);
 
     const form = new FormData(e.currentTarget);
-    const res = await fetch("/api/tickets", { method: "POST", body: form });
+    const idempotencyKey = generateIdempotencyKey();
+    
+    const res = await fetch("/api/tickets", { 
+      method: "POST", 
+      body: form,
+      headers: {
+        "Idempotency-Key": idempotencyKey,
+      },
+    });
     setLoading(false);
 
     if (!res.ok) {

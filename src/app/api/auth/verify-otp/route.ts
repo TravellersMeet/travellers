@@ -8,6 +8,7 @@ import {
   rateLimitExceededResponse,
 } from "@/lib/rate-limit";
 import { enforceRateLimit } from "@/lib/rate-limit-rules";
+import { RATE_LIMIT_CONFIG } from "@/lib/rate-limit-config";
 
 const verifySchema = z.object({
   email: z.string().email("Invalid email"),
@@ -19,6 +20,12 @@ export const POST = withValidation(verifySchema, async (req, data) => {
     const { email, otp } = data;
 
     const rateLimit = await enforceRateLimit(req, "authVerifyOtp", email);
+    const rateLimit = await checkRateLimit({
+      namespace: "auth:verify-otp",
+      identifier: getRateLimitIdentifier(req, email),
+      limit: RATE_LIMIT_CONFIG.auth.verifyOtp.limit,
+      windowSeconds: RATE_LIMIT_CONFIG.auth.verifyOtp.windowSeconds,
+    });
 
     if (!rateLimit.allowed) {
       return rateLimitExceededResponse(rateLimit);
