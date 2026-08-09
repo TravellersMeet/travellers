@@ -16,6 +16,10 @@ vi.mock("@/lib/prisma", () => ({
       findFirst: vi.fn(),
       create: vi.fn(),
     },
+    block: {
+      findFirst: vi.fn(),
+      findMany: vi.fn(),
+    },
   },
 }));
 
@@ -31,6 +35,8 @@ describe("Connections API", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     (auth as any).mockResolvedValue({ user: { id: "user-1", name: "User 1" } });
+    // Default: neither user has blocked the other.
+    (prisma.block.findFirst as any).mockResolvedValue(null);
   });
 
   describe("GET /api/connections", () => {
@@ -82,6 +88,34 @@ describe("Connections API", () => {
       expect(data.success).toBe(true);
       expect(data.conversationId).toBe("conv-1");
       expect(prisma.conversation.create).toHaveBeenCalled();
+    });
+
+    it("refuses to send a request when either side has blocked the other", async () => {
+      (prisma.block.findFirst as any).mockResolvedValue({ id: "block-1" });
+
+      const req = {
+        json: async () => ({ action: "send", userId: "user-2" }),
+      };
+
+      const res = await POST(req as any);
+
+      expect(res.status).toBe(403);
+      expect(prisma.connectionRequest.create).not.toHaveBeenCalled();
+    });
+
+    it("refuses to accept a request created before the block", async () => {
+      (prisma.connectionRequest.findUnique as any).mockResolvedValue({ id: "req-1", senderId: "user-2", receiverId: "user-1", status: "PENDING" });
+      (prisma.block.findFirst as any).mockResolvedValue({ id: "block-1" });
+
+      const req = {
+        json: async () => ({ action: "accept", userId: "user-2" }),
+      };
+
+      const res = await POST(req as any);
+
+      expect(res.status).toBe(403);
+      expect(prisma.connectionRequest.update).not.toHaveBeenCalled();
+      expect(prisma.conversation.create).not.toHaveBeenCalled();
     });
   });
 });
