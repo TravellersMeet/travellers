@@ -15,9 +15,13 @@ vi.mock("@/lib/prisma", () => ({
       findUnique: vi.fn(),
       create: vi.fn(),
     },
+    connectionRequest: {
+      deleteMany: vi.fn(),
+    },
     report: {
       create: vi.fn(),
     },
+    $transaction: vi.fn((operations) => Promise.all(operations)),
   },
 }));
 
