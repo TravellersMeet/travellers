@@ -356,6 +356,227 @@ describe("POST /api/tickets", () => {
     );
   });
 
+  it("prevents duplicate ticket creation from rapid repeated requests", async () => {
+    const claim = {
+      state: "acquired" as const,
+      storageKey: "result-key",
+      lockKey: "lock-key",
+    };
+
+    vi.mocked(
+      claimIdempotencyKey,
+    ).mockResolvedValue(claim);
+
+    // First request
+    const firstResponse = await POST(
+      request(
+        validInput,
+        "ticket-upload:rapid-123",
+      ) as never,
+    );
+
+    expect(firstResponse.status).toBe(201);
+    expect(prisma.ticket.create).toHaveBeenCalledTimes(1);
+
+    // Reset the mock for the second request
+    vi.mocked(prisma.ticket.create).mockClear();
+    vi.mocked(prisma.ticket.create).mockResolvedValue({
+      id: "ticket-2",
+      userId: "user-1",
+      destination: "New Delhi",
+      departureDate: new Date("2026-08-15T00:00:00.000Z"),
+      ticketUrl: "https://example.com/ticket.pdf",
+      status: TicketStatus.PENDING,
+    } as never);
+
+    // Second request with same idempotency key (simulating rapid double-click)
+    vi.mocked(claimIdempotencyKey).mockResolvedValue({
+      state: "replay",
+      result: {
+        status: 201,
+        body: {
+          ok: true,
+          ticket: { id: "ticket-1" },
+        },
+      },
+    });
+
+    const secondResponse = await POST(
+      request(
+        validInput,
+        "ticket-upload:rapid-123",
+      ) as never,
+    );
+
+    expect(secondResponse.status).toBe(201);
+    expect(secondResponse.headers.get("Idempotency-Replayed")).toBe("true");
+    expect(prisma.ticket.create).not.toHaveBeenCalled();
+  });
+
+  it("allows failed requests to be retried with new idempotency key", async () => {
+    const claim = {
+      state: "acquired" as const,
+      storageKey: "result-key",
+      lockKey: "lock-key",
+    };
+
+    vi.mocked(
+      claimIdempotencyKey,
+    ).mockResolvedValue(claim);
+
+    vi.mocked(
+      uploadFileToCloudinary,
+    ).mockRejectedValue(
+      new Error("Cloudinary upload failed"),
+    );
+
+    // First failed request
+    const firstResponse = await POST(
+      request(
+        validInput,
+        "ticket-upload:retry-123",
+      ) as never,
+    );
+
+    expect(firstResponse.status).toBe(500);
+
+    // Reset mocks for retry
+    vi.mocked(claimIdempotencyKey).mockResolvedValue({
+      state: "acquired" as const,
+      storageKey: "result-key-2",
+      lockKey: "lock-key-2",
+    });
+    vi.mocked(uploadFileToCloudinary).mockResolvedValue({
+      url: "https://example.com/ticket.pdf",
+      publicId: "travellers/tickets/ticket-1",
+    });
+    vi.mocked(prisma.ticket.create).mockResolvedValue({
+      id: "ticket-1",
+      userId: "user-1",
+      destination: "New Delhi",
+      departureDate: new Date("2026-08-15T00:00:00.000Z"),
+      ticketUrl: "https://example.com/ticket.pdf",
+      status: TicketStatus.PENDING,
+    } as never);
+
+    // Retry with new idempotency key
+    const retryResponse = await POST(
+      request(
+        validInput,
+        "ticket-upload:retry-456",
+      ) as never,
+    );
+
+    expect(retryResponse.status).toBe(201);
+    expect(prisma.ticket.create).toHaveBeenCalled();
+  });
+
+  it("allows legitimate separate tickets with different destinations", async () => {
+    const claim1 = {
+      state: "acquired" as const,
+      storageKey: "result-key-1",
+      lockKey: "lock-key-1",
+    };
+
+    const claim2 = {
+      state: "acquired" as const,
+      storageKey: "result-key-2",
+      lockKey: "lock-key-2",
+    };
+
+    vi.mocked(claimIdempotencyKey)
+      .mockResolvedValueOnce(claim1)
+      .mockResolvedValueOnce(claim2);
+
+    // First ticket
+    const firstInput = { ...validInput, destination: "New Delhi" };
+    const firstResponse = await POST(
+      request(
+        firstInput,
+        "ticket-upload:separate-1",
+      ) as never,
+    );
+
+    expect(firstResponse.status).toBe(201);
+    expect(prisma.ticket.create).toHaveBeenCalledTimes(1);
+
+    // Reset for second ticket
+    vi.mocked(prisma.ticket.create).mockClear();
+    vi.mocked(prisma.ticket.create).mockResolvedValue({
+      id: "ticket-2",
+      userId: "user-1",
+      destination: "Mumbai",
+      departureDate: new Date("2026-08-15T00:00:00.000Z"),
+      ticketUrl: "https://example.com/ticket2.pdf",
+      status: TicketStatus.PENDING,
+    } as never);
+
+    // Second ticket with different destination
+    const secondInput = { ...validInput, destination: "Mumbai" };
+    const secondResponse = await POST(
+      request(
+        secondInput,
+        "ticket-upload:separate-2",
+      ) as never,
+    );
+
+    expect(secondResponse.status).toBe(201);
+    expect(prisma.ticket.create).toHaveBeenCalledTimes(1);
+  });
+
+  it("allows legitimate separate tickets with different dates", async () => {
+    const claim1 = {
+      state: "acquired" as const,
+      storageKey: "result-key-1",
+      lockKey: "lock-key-1",
+    };
+
+    const claim2 = {
+      state: "acquired" as const,
+      storageKey: "result-key-2",
+      lockKey: "lock-key-2",
+    };
+
+    vi.mocked(claimIdempotencyKey)
+      .mockResolvedValueOnce(claim1)
+      .mockResolvedValueOnce(claim2);
+
+    // First ticket
+    const firstInput = { ...validInput, departureDate: "2026-08-15" };
+    const firstResponse = await POST(
+      request(
+        firstInput,
+        "ticket-upload:date-1",
+      ) as never,
+    );
+
+    expect(firstResponse.status).toBe(201);
+    expect(prisma.ticket.create).toHaveBeenCalledTimes(1);
+
+    // Reset for second ticket
+    vi.mocked(prisma.ticket.create).mockClear();
+    vi.mocked(prisma.ticket.create).mockResolvedValue({
+      id: "ticket-2",
+      userId: "user-1",
+      destination: "New Delhi",
+      departureDate: new Date("2026-08-20T00:00:00.000Z"),
+      ticketUrl: "https://example.com/ticket2.pdf",
+      status: TicketStatus.PENDING,
+    } as never);
+
+    // Second ticket with different date
+    const secondInput = { ...validInput, departureDate: "2026-08-20" };
+    const secondResponse = await POST(
+      request(
+        secondInput,
+        "ticket-upload:date-2",
+      ) as never,
+    );
+
+    expect(secondResponse.status).toBe(201);
+    expect(prisma.ticket.create).toHaveBeenCalledTimes(1);
+  });
+
   it("releases the idempotency lock after a failed request", async () => {
     const claim = {
       state: "acquired" as const,
