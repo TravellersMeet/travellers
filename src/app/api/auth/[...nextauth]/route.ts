@@ -5,6 +5,7 @@ import {
   getRateLimitIdentifier,
   rateLimitExceededResponse,
 } from "@/lib/rate-limit";
+import { RATE_LIMIT_CONFIG } from "@/lib/rate-limit-config";
 import type { NextRequest } from "next/server";
 
 export const GET = handlers.GET;
@@ -37,8 +38,8 @@ export async function POST(request: NextRequest): Promise<Response> {
   const rateLimit = await checkRateLimit({
     namespace: "auth:signin",
     identifier: getRateLimitIdentifier(request, email),
-    limit: 10,
-    windowSeconds: 10 * 60,
+    limit: RATE_LIMIT_CONFIG.auth.signin.limit,
+    windowSeconds: RATE_LIMIT_CONFIG.auth.signin.windowSeconds,
   });
 
   if (!rateLimit.allowed) {

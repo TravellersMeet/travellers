@@ -12,6 +12,7 @@ import {
   getRateLimitIdentifier,
   rateLimitExceededResponse,
 } from "@/lib/rate-limit";
+import { RATE_LIMIT_CONFIG } from "@/lib/rate-limit-config";
 
 const signupSchema = z.object({
   name: z.string().min(1, "Name required"),
@@ -30,8 +31,8 @@ export const POST = withValidation(
       const rateLimit = await checkRateLimit({
         namespace: "auth:signup",
         identifier: getRateLimitIdentifier(_req, email),
-        limit: 5,
-        windowSeconds: 60 * 60,
+        limit: RATE_LIMIT_CONFIG.auth.signup.limit,
+        windowSeconds: RATE_LIMIT_CONFIG.auth.signup.windowSeconds,
       });
 
       if (!rateLimit.allowed) {
