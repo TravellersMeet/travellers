@@ -364,6 +364,22 @@ if (!inputText.trim() && !selectedRoute) {
       }),
     });
 
+    // A conversation holds a single plan. If one already exists (another
+    // participant created it, or this ran twice), open that one rather than
+    // showing an error.
+    if (res.status === 409) {
+      const existing = await fetch(
+        `/api/meetup-plans?conversationId=${activeConvId}`
+      );
+
+      if (existing.ok) {
+        const plan = await existing.json();
+        setMeetupPlan(plan);
+        setShowMeetup(!!plan);
+        return;
+      }
+    }
+
     if (!res.ok) {
       throw new Error("Failed to create meetup");
     }
