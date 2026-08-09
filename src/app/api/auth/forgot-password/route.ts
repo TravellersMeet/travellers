@@ -10,6 +10,7 @@ import {
   getRateLimitIdentifier,
   rateLimitExceededResponse,
 } from "@/lib/rate-limit";
+import { RATE_LIMIT_CONFIG } from "@/lib/rate-limit-config";
 
 const forgotPasswordSchema = z.object({
   email: z.string().email("Invalid email address"),
@@ -22,8 +23,8 @@ export const POST = withValidation(forgotPasswordSchema, async (req, data) => {
     const rateLimit = await checkRateLimit({
       namespace: "auth:forgot-password",
       identifier: getRateLimitIdentifier(req, email),
-      limit: 3,
-      windowSeconds: 15 * 60,
+      limit: RATE_LIMIT_CONFIG.auth.forgotPassword.limit,
+      windowSeconds: RATE_LIMIT_CONFIG.auth.forgotPassword.windowSeconds,
     });
 
     if (!rateLimit.allowed) {
