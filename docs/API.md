@@ -241,6 +241,57 @@ Response:
 }
 ```
 
+## Meetup checklist endpoints
+
+Every verb resolves the item's `MeetupPlan`, then its `Conversation`, and
+requires the caller to be a member of that conversation. Either traveller on a
+plan can read and edit the shared list; nobody outside it can.
+
+### `GET /api/meetup-checklist?meetupPlanId=<id>`
+
+Return the plan's checklist, incomplete items first. Bounded at 200 rows.
+Responds `[]` when `meetupPlanId` is omitted, `403` when the caller is not a
+member of the plan's conversation.
+
+### `POST /api/meetup-checklist`
+
+Add an item.
+
+```json
+{
+  "meetupPlanId": "plan-1",
+  "text": "Book the hostel"
+}
+```
+
+- `text` is trimmed, required, and capped at 200 characters.
+- `201 Created` with the new item.
+- `400 Bad Request` for empty, over-long or non-string text.
+- `409 Conflict` once the plan already holds 200 items.
+
+### `PATCH /api/meetup-checklist`
+
+Update an item's text, its completion flag, or both. At least one of the two
+must be present.
+
+```json
+{
+  "id": "item-1",
+  "text": "Book the hostel",
+  "completed": true
+}
+```
+
+- `400 Bad Request` when `id` is missing, when neither field is supplied, when
+  `text` trims to empty, or when `completed` is not a boolean.
+- `404 Not Found` for an unknown id, `403 Forbidden` for another
+  conversation's item.
+
+### `DELETE /api/meetup-checklist?id=<itemId>`
+
+Remove one item. `400` without an `id`, `404` for an unknown id, `403` for
+another conversation's item.
+
 ## Messaging endpoints
 
 ### `GET /api/messages?conversationId=<id>`
