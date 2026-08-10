@@ -123,6 +123,53 @@ Request body:
 }
 ```
 
+### `GET /api/users`
+
+Search other travellers. Requires an authenticated session.
+
+Query parameters:
+
+| Parameter | Type    | Default | Notes |
+| --------- | ------- | ------- | ----- |
+| `search`  | string  | —       | Trimmed. Matched case-insensitively against `name` and `location`. Max 100 characters. |
+| `limit`   | integer | `20`    | Capped at 100. |
+| `cursor`  | string  | —       | Opaque cursor taken from a previous response's `nextCursor`. |
+
+Response:
+
+```json
+{
+  "users": [
+    {
+      "id": "clx...",
+      "name": "Asha Sharma",
+      "image": null,
+      "bio": "Travel enthusiast",
+      "location": "Delhi",
+      "createdAt": "2026-01-04T10:12:00.000Z"
+    }
+  ],
+  "nextCursor": "eyJ2ZXJzaW9uIjox...",
+  "hasMore": true
+}
+```
+
+Privacy rules this endpoint enforces:
+
+- **Email addresses are never returned and are never searched.** Matching on
+  `email` would turn the endpoint into an account-enumeration oracle, and
+  returning it would expose an address that no screen in the product shows.
+- Soft-deleted accounts (`isDeleted: true`) are excluded.
+- The caller is excluded from their own results.
+- Users on either side of a `Block` are excluded, matching the behaviour of
+  `GET /api/conversations`.
+
+Typical responses:
+
+- `200 OK` with the page of results
+- `400 Bad Request` for an invalid `limit`/`cursor` or an over-long `search`
+- `401 Unauthorized` without a session
+
 ## Ticket endpoints
 
 ### `POST /api/tickets`
