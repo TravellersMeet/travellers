@@ -304,6 +304,78 @@ channel and to each participant's personal channel.
 List the caller's conversations, most recently updated first, each with the
 other participant and the latest message for the sidebar.
 
+## Notification endpoints
+
+### `GET /api/notifications`
+
+Return one page of the caller's notifications, newest first.
+
+Query parameters:
+
+| Name | Default | Notes |
+| --- | --- | --- |
+| `limit` | `20` | Capped at `100`. |
+| `cursor` | — | Opaque cursor from a previous `pagination.nextCursor`. |
+| `unreadOnly` | `false` | `true` returns only unread notifications. |
+
+Response:
+
+```json
+{
+  "items": [
+    {
+      "id": "ntf-3",
+      "title": "New connection request",
+      "content": "Asha wants to connect",
+      "link": "/dashboard/connections",
+      "read": false,
+      "createdAt": "2026-08-10T09:15:00.000Z"
+    }
+  ],
+  "pagination": {
+    "limit": 20,
+    "nextCursor": "eyJ2ZXJzaW9uIjoxLCJ0aW1lc3RhbXAiOiIuLi4iLCJpZCI6Im50Zi0yIn0",
+    "hasMore": true
+  },
+  "notifications": [],
+  "unreadCount": 4
+}
+```
+
+`notifications` is an alias for `items`, kept for existing consumers.
+
+Notifications whose `expiresAt` has passed are excluded from both the page and
+`unreadCount`. The cron sweeper at `/api/internal/notifications/cleanup` deletes
+them in batches, so read paths cannot assume it has caught up.
+
+`400` is returned for a malformed `limit` or `cursor`.
+
+### `PATCH /api/notifications`
+
+Mark every unread notification as read.
+
+```json
+{ "ok": true, "updated": 12 }
+```
+
+### `DELETE /api/notifications`
+
+Clear the caller's read notifications. Pass `?all=true` to clear unread ones too.
+
+```json
+{ "ok": true, "deleted": 12 }
+```
+
+### `PATCH /api/notifications/[id]` and `PATCH /api/notifications/[id]/read`
+
+Mark a single notification as read. Both routes are equivalent; the `/read`
+form is the one the notification bell uses.
+
+### `DELETE /api/notifications/[id]`
+
+Dismiss a single notification. Responds `404` when the id does not exist or
+belongs to another user.
+
 ## AI chat endpoint
 
 ### `POST /api/chat`
