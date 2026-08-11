@@ -49,6 +49,12 @@ export const RATE_LIMIT_RULES = {
     limit: 3,
     windowSeconds: 15 * 60,
   },
+  /** Password reset confirmation attempts. */
+  authResetPassword: {
+    namespace: "auth:reset-password",
+    limit: 5,
+    windowSeconds: 15 * 60,
+  },
   /** Gemini calls, which are billed per request. */
   chat: {
     namespace: "chat",
