@@ -137,11 +137,11 @@ export async function PATCH(request: NextRequest) {
           typeof body.budgetRange === "string"
             ? body.budgetRange
             : undefined,
-        socialLinks:
-          body.socialLinks &&
-          typeof body.socialLinks === "object"
-            ? body.socialLinks
-            : undefined,
+        socialLinks: Array.isArray(body.socialLinks)
+          ? body.socialLinks.filter(
+              (item): item is string => typeof item === "string",
+            )
+          : undefined,
         age:
           parsedAge !== undefined &&
           Number.isFinite(parsedAge)
