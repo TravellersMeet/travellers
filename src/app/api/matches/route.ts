@@ -15,6 +15,13 @@ import {
 import { apiError, apiJson } from "@/lib/api-response";
 import { getRequestId } from "@/lib/request-id";
 
+// Upper bound on candidate tickets pulled for a destination/date window before
+// relevance scoring + pagination. Was a magic `100`, which made `total`/`hasMore`
+// wrong and hid every match past #100 once a window had more than 100 tickets.
+// The full candidate set is needed to rank by relevance, so this is a safety
+// cap (not a page size) — raise it if popular windows legitimately exceed it.
+const MAX_MATCH_CANDIDATES = 500;
+
 function calculateRelevance(
   currentUser: any,
   matchedUser: any,
@@ -344,7 +351,8 @@ export async function GET(req: NextRequest) {
 
     const matches = await prisma.ticket.findMany({
       where: whereClause,
-      take: 100,
+      take: MAX_MATCH_CANDIDATES,
+      orderBy: { departureDate: "asc" },
       select: {
         id: true,
         destination: true,
