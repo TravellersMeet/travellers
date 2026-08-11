@@ -153,12 +153,7 @@ export function createCalendarEvent(
         .map(Number);
 
       const start = new Date(
-        year,
-        month - 1,
-        day,
-        hours,
-        minutes,
-        0,
+        Date.UTC(year, month - 1, day, hours, minutes, 0),
       );
       const end = new Date(
         start.getTime() + route.durationMinutes * 60_000,
@@ -166,12 +161,12 @@ export function createCalendarEvent(
 
       lines.push(
         `DTEND:${[
-          end.getFullYear(),
-          pad(end.getMonth() + 1),
-          pad(end.getDate()),
+          end.getUTCFullYear(),
+          pad(end.getUTCMonth() + 1),
+          pad(end.getUTCDate()),
           "T",
-          pad(end.getHours()),
-          pad(end.getMinutes()),
+          pad(end.getUTCHours()),
+          pad(end.getUTCMinutes()),
           "00",
         ].join("")}`,
       );
