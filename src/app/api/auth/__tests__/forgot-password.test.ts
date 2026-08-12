@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
+import { NextResponse } from "next/server";
 
 vi.mock("@/lib/prisma", () => ({
   default: {
@@ -24,11 +25,14 @@ import { POST } from "../forgot-password/route";
 import prisma from "@/lib/prisma";
 import { sendPasswordResetEmail } from "@/lib/email";
 import { RATE_LIMIT_CONFIG } from "@/lib/rate-limit-config";
+// Import the mocked module as a namespace instead of rateLimit,
+// which vitest can't resolve at runtime (the @ alias is transform-time only).
+import * as rateLimit from "@/lib/rate-limit";
 
 beforeEach(() => {
   vi.clearAllMocks();
   
-  const { checkRateLimit } = require("@/lib/rate-limit");
+  const { checkRateLimit } = rateLimit;
   vi.mocked(checkRateLimit).mockResolvedValue({
     allowed: true,
     limit: RATE_LIMIT_CONFIG.auth.forgotPassword.limit,
@@ -98,7 +102,7 @@ describe("POST /api/auth/forgot-password", () => {
   });
 
   it("uses configured rate limits for password reset", async () => {
-    const { checkRateLimit } = require("@/lib/rate-limit");
+    const { checkRateLimit } = rateLimit;
     
     vi.mocked(checkRateLimit).mockResolvedValue({
       allowed: true,
@@ -122,7 +126,7 @@ describe("POST /api/auth/forgot-password", () => {
   });
 
   it("returns 429 when password reset rate limit is exceeded", async () => {
-    const { checkRateLimit, rateLimitExceededResponse } = require("@/lib/rate-limit");
+    const { checkRateLimit, rateLimitExceededResponse } = rateLimit;
     
     vi.mocked(checkRateLimit).mockResolvedValue({
       allowed: false,
@@ -133,10 +137,12 @@ describe("POST /api/auth/forgot-password", () => {
       bypassed: false,
     });
 
-    vi.mocked(rateLimitExceededResponse).mockReturnValue({
-      status: 429,
-      json: async () => ({ error: "Too many requests", retryAfter: RATE_LIMIT_CONFIG.auth.forgotPassword.windowSeconds }),
-    });
+    vi.mocked(rateLimitExceededResponse).mockReturnValue(
+      NextResponse.json(
+        { error: "Too many requests", retryAfter: RATE_LIMIT_CONFIG.auth.forgotPassword.windowSeconds },
+        { status: 429 },
+      ),
+    );
 
     const req = createRequest({ email: "test@example.com" });
     const res = await POST(req as any);

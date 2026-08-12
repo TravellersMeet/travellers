@@ -10,6 +10,10 @@ vi.mock("@/lib/prisma", () => ({
         },
         ticket: {
             create: vi.fn(),
+            // Route now checks for an existing ticket before creating; default
+            // to "no duplicate" so the create path is exercised.
+            findMany: vi.fn(() => Promise.resolve([])),
+            findFirst: vi.fn(() => Promise.resolve(null)),
         },
     },
 }))
@@ -133,7 +137,7 @@ describe("POST /api/tickets", () => {
         const res = await POST(makeNextRequest(body) as any)
         const data = await res.json()
 
-        expect(res.status).toBe(200)
+        expect(res.status).toBe(201)
         expect(data.ok).toBe(true)
         expect(prisma.ticket.create).toHaveBeenCalledWith(
             expect.objectContaining({

@@ -1,5 +1,16 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+
+// Stub the lucide-react icons — under vitest's ESM resolution they can come
+// through as `undefined`, which makes rendering the icons throw "Element type
+// is invalid". They're purely decorative here, so render nothing.
+vi.mock("lucide-react", () => ({
+  CloudUpload: () => null,
+  CheckCircle2: () => null,
+  AlertCircle: () => null,
+  Loader2: () => null,
+}));
+
 import TicketUploadForm from "../ticket-upload-form";
 
 global.fetch = vi.fn();
