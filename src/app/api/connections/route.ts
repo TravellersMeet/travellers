@@ -2,9 +2,11 @@ import prisma from "@/lib/prisma";
 import { auth } from "@/lib/auth";
 import { NextRequest, NextResponse } from "next/server";
 import { isBlockedBetween } from "@/lib/blocking";
+import { createNotification } from "@/lib/notifications";
 import { rateLimitExceededResponse } from "@/lib/rate-limit";
 import { enforceRateLimit } from "@/lib/rate-limit-rules";
 import { triggerPusher } from "@/lib/pusher";
+import { NotificationType } from "@prisma/client";
 
 export async function GET(req: NextRequest) {
   const session = await auth();
@@ -190,6 +192,15 @@ export async function POST(req: NextRequest) {
             request: updated,
           });
 
+          await createNotification({
+            userId,
+            type: NotificationType.CONNECTION_REQUEST,
+            title: "New connection request",
+            content: `${session.user.name || "A traveller"} sent you a connection request.`,
+            link: "/dashboard",
+            dedupeKey: `conn-req:${currentUserId}:${userId}`,
+          });
+
           return NextResponse.json({ success: true, request: updated });
         }
       }
@@ -209,6 +220,15 @@ export async function POST(req: NextRequest) {
 
       await triggerPusher(`private-user-${userId}`, "connection-request", {
         request: newRequest,
+      });
+
+      await createNotification({
+        userId,
+        type: NotificationType.CONNECTION_REQUEST,
+        title: "New connection request",
+        content: `${session.user.name || "A traveller"} sent you a connection request.`,
+        link: "/dashboard",
+        dedupeKey: `conn-req:${currentUserId}:${userId}`,
       });
 
       return NextResponse.json({ success: true, request: newRequest });
@@ -273,6 +293,15 @@ export async function POST(req: NextRequest) {
           id: currentUserId,
           name: session.user.name || "A traveler",
         },
+      });
+
+      await createNotification({
+        userId,
+        type: NotificationType.CONNECTION_ACCEPTED,
+        title: "Connection accepted",
+        content: `${session.user.name || "A traveller"} accepted your connection request.`,
+        link: "/dashboard",
+        dedupeKey: `conn-accept:${currentUserId}:${userId}`,
       });
 
       return NextResponse.json({ success: true, conversationId: conversation.id });
