@@ -9,11 +9,29 @@ vi.mock("@/lib/prisma", () => ({
   },
 }));
 
+vi.mock("@/lib/rate-limit-rules", () => ({
+  enforceRateLimit: vi.fn().mockResolvedValue({
+    allowed: true,
+    limit: 5,
+    remaining: 4,
+    resetSeconds: 900,
+    bypassed: false,
+  }),
+}));
+
 import { POST } from "../reset-password/route";
 import prisma from "@/lib/prisma";
+import { enforceRateLimit } from "@/lib/rate-limit-rules";
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(enforceRateLimit).mockResolvedValue({
+    allowed: true,
+    limit: 5,
+    remaining: 4,
+    resetSeconds: 900,
+    bypassed: false,
+  });
 });
 
 describe("POST /api/auth/reset-password", () => {
@@ -30,6 +48,21 @@ describe("POST /api/auth/reset-password", () => {
       json: async () => bodyData,
     } as any;
   };
+
+  it("returns 429 when rate limit is exceeded", async () => {
+    vi.mocked(enforceRateLimit).mockResolvedValueOnce({
+      allowed: false,
+      limit: 5,
+      remaining: 0,
+      resetSeconds: 900,
+      bypassed: false,
+    });
+
+    const req = createRequest({ token: "some-token", password: "newpassword123" });
+    const res = await POST(req as any);
+
+    expect(res.status).toBe(429);
+  });
 
   it("returns 400 for missing token or invalid inputs", async () => {
     const req = createRequest({ password: "password123" });

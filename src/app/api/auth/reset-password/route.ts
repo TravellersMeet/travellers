@@ -3,6 +3,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { hashPassword } from "@/lib/password";
 import { withValidation } from "@/lib/withValidation";
+import {
+  applyRateLimitHeaders,
+  rateLimitExceededResponse,
+} from "@/lib/rate-limit";
+import { enforceRateLimit } from "@/lib/rate-limit-rules";
 
 const resetPasswordSchema = z.object({
   token: z.string().min(1, "Reset token is required"),
@@ -12,6 +17,12 @@ const resetPasswordSchema = z.object({
 export const POST = withValidation(resetPasswordSchema, async (req, data) => {
   try {
     const { token, password } = data;
+
+    const rateLimit = await enforceRateLimit(req, "authResetPassword");
+
+    if (!rateLimit.allowed) {
+      return rateLimitExceededResponse(rateLimit);
+    }
 
     // Find the user with matching and unexpired reset token
     const user = await prisma.user.findFirst({
@@ -24,10 +35,13 @@ export const POST = withValidation(resetPasswordSchema, async (req, data) => {
     });
 
     if (!user) {
-      return NextResponse.json(
-        { error: "Invalid or expired reset token" },
-        { status: 400 }
-      );
+      return applyRateLimitHeaders(
+        NextResponse.json(
+          { error: "Invalid or expired reset token" },
+          { status: 400 }
+        ),
+        rateLimit,
+      ) as NextResponse;
     }
 
     // Hash the new password. The cost factor lives in src/lib/password.ts so
@@ -44,10 +58,13 @@ export const POST = withValidation(resetPasswordSchema, async (req, data) => {
       },
     });
 
-    return NextResponse.json({
-      ok: true,
-      message: "Password reset successful. You can now log in.",
-    });
+    return applyRateLimitHeaders(
+      NextResponse.json({
+        ok: true,
+        message: "Password reset successful. You can now log in.",
+      }),
+      rateLimit,
+    ) as NextResponse;
   } catch (error) {
     console.error("Reset password error:", error);
     return NextResponse.json(
