@@ -4,6 +4,7 @@ import {
   extractCloudinaryPublicId,
   processAssetCleanupJobs,
 } from "@/lib/cloudinary-delete";
+import { invalidateMatchCachesForTicket } from "@/lib/match-cache";
 import prisma from "@/lib/prisma";
 
 export interface DeleteAccountResult {
@@ -14,6 +15,7 @@ export interface DeleteAccountResult {
     deleted: number;
     pending: number;
   };
+  ticketsInvalidated: number;
 }
 
 function uniquePublicIds(
@@ -37,7 +39,14 @@ export async function deleteUserAccount(
   userId: string,
 ): Promise<DeleteAccountResult> {
   const databaseResult = await prisma.$transaction(
-    async (tx: Prisma.TransactionClient) => {
+    async (tx: Prisma.TransactionClient): Promise<{
+      alreadyDeleted: boolean;
+      queuedAssets: number;
+      tickets: Array<{
+        destination: string;
+        departureDate: Date;
+      }>;
+    }> => {
       const user = await tx.user.findUnique({
         where: {
           id: userId,
@@ -61,6 +70,7 @@ export async function deleteUserAccount(
         return {
           alreadyDeleted: true,
           queuedAssets: 0,
+          tickets: [],
         };
       }
 
@@ -78,6 +88,17 @@ export async function deleteUserAccount(
           skipDuplicates: true,
         });
       }
+
+      // Fetch tickets for cache invalidation before deletion
+      const tickets = await tx.ticket.findMany({
+        where: {
+          userId,
+        },
+        select: {
+          destination: true,
+          departureDate: true,
+        },
+      });
 
       // Ticket.user currently has no database cascade rule.
       await tx.ticket.deleteMany({
@@ -114,14 +135,39 @@ export async function deleteUserAccount(
       return {
         alreadyDeleted: false,
         queuedAssets: publicIds.length,
+        tickets,
+      } as {
+        alreadyDeleted: boolean;
+        queuedAssets: number;
+        tickets: Array<{
+          destination: string;
+          departureDate: Date;
+        }>;
       };
     },
   );
 
   const cleanup = await processAssetCleanupJobs(userId);
 
+  // Invalidate match caches for deleted tickets (outside transaction)
+  const ticketsInvalidated = databaseResult.tickets?.length || 0;
+  for (const ticket of databaseResult.tickets || []) {
+    try {
+      await invalidateMatchCachesForTicket({
+        destination: ticket.destination,
+        departureDate: ticket.departureDate,
+      });
+    } catch (error) {
+      console.error(
+        "Failed to invalidate match cache for deleted ticket:",
+        error,
+      );
+    }
+  }
+
   return {
     ...databaseResult,
     cleanup,
-  };
+    ticketsInvalidated,
+  } as DeleteAccountResult;
 }
