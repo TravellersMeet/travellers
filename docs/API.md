@@ -267,6 +267,65 @@ Fetch a single route belonging to the authenticated user.
 
 Delete a saved route owned by the authenticated user.
 
+## Connection endpoints
+
+### `GET /api/connections`
+
+Return the caller's pending requests in both directions plus a page of their
+accepted connections.
+
+Query parameters:
+
+| Name | Default | Notes |
+| --- | --- | --- |
+| `limit` | `20` | Page size for `connections`. Capped at `100`. |
+| `cursor` | — | Opaque cursor from a previous `pagination.nextCursor`. |
+
+Response:
+
+```json
+{
+  "incoming": [],
+  "outgoing": [],
+  "connections": [
+    {
+      "requestId": "req-1",
+      "user": { "id": "user-2", "name": "Asha", "image": null, "bio": null, "location": "Delhi" },
+      "connectedAt": "2026-08-01T12:00:00.000Z"
+    }
+  ],
+  "pagination": {
+    "limit": 20,
+    "nextCursor": "eyJ2ZXJzaW9uIjox...",
+    "hasMore": false
+  }
+}
+```
+
+`incoming` and `outgoing` are the pending requests, newest first, bounded at
+100 each. `connections` is the cursor-paginated accepted list.
+
+Users on either side of a `Block` are excluded from all three lists, matching
+the behaviour of `GET /api/conversations` and the guards `POST
+/api/connections` already applies to `send` and `accept`.
+
+`400` is returned for a malformed `limit` or `cursor`.
+
+### `POST /api/connections`
+
+Send, accept or decline a connection request.
+
+```json
+{
+  "action": "send",
+  "userId": "user-2"
+}
+```
+
+`action` is one of `send`, `accept`, `decline`. Accepting creates the
+conversation between the two users. All three are rate limited and refuse to
+act across a block.
+
 ## Match discovery endpoint
 
 ### `GET /api/matches?destination=<name>&date=<YYYY-MM-DD>`
