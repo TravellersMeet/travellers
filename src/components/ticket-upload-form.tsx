@@ -3,11 +3,18 @@
 import { useState, FormEvent, useRef} from "react";
 import { CloudUpload, CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
 
+function generateIdempotencyKey(): string {
+  return `${Date.now()}-${Math.random().toString(36).substring(2, 15)}`;
+}
+
 export default function TicketUploadForm() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const fileRef = useRef<HTMLInputElement | null>(null);
+  // Synchronous re-entry guard: the `loading` state is async, so rapid
+  // repeated submits can all fire before it flips. This blocks them.
+  const submittingRef = useRef(false);
 const [dragActive, setDragActive] = useState(false);
 const [fileName, setFileName] = useState<string | null>(null);
 
@@ -43,12 +50,23 @@ function handleDrop(e: React.DragEvent) {
 
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (submittingRef.current) return;
+    submittingRef.current = true;
     setLoading(true);
     setError(null);
     setSuccess(false);
 
     const form = new FormData(e.currentTarget);
-    const res = await fetch("/api/tickets", { method: "POST", body: form });
+    const idempotencyKey = generateIdempotencyKey();
+    
+    const res = await fetch("/api/tickets", { 
+      method: "POST", 
+      body: form,
+      headers: {
+        "Idempotency-Key": idempotencyKey,
+      },
+    });
+    submittingRef.current = false;
     setLoading(false);
 
     if (!res.ok) {
@@ -72,7 +90,7 @@ function handleDrop(e: React.DragEvent) {
   }
 
   return (
-    <form onSubmit={onSubmit} className="space-y-6">
+    <form onSubmit={onSubmit} aria-label="Upload ticket" className="space-y-6">
       <div className="space-y-4">
         <div>
           <label htmlFor="destination" className="block text-sm font-medium">Destination city</label>
@@ -85,7 +103,7 @@ function handleDrop(e: React.DragEvent) {
 
         
        <div>
-  <label className="block text-sm font-medium">Ticket (PDF or image)</label>
+  <label htmlFor="file-upload" className="block text-sm font-medium">Ticket (PDF or image)</label>
 
   <div
     onDragOver={handleDragOver}

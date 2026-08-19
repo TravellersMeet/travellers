@@ -39,6 +39,7 @@ vi.mock("@/lib/notifications", () => ({
 
 const existingTicket = {
   id: "ticket-1",
+  userId: "traveller-1",
   destination: "Goa",
   departureDate: new Date(
     "2026-08-15T00:00:00.000Z",
@@ -47,15 +48,27 @@ const existingTicket = {
   userId: "traveller-1",
 };
 
-const updatedTicket = {
-  ...existingTicket,
-  status: "VERIFIED",
-  user: {
-    id: "traveller-1",
-    name: "Traveller",
-    email: "traveller@example.com",
-  },
-};
+function transactionMock(status: string) {
+  return {
+    ticket: {
+      findUnique: vi
+        .fn()
+        .mockResolvedValue(existingTicket),
+      update: vi.fn().mockResolvedValue({
+        ...existingTicket,
+        status,
+        user: {
+          id: "traveller-1",
+          name: "Traveller",
+          email: "traveller@example.com",
+        },
+      }),
+    },
+    ticketAuditLog: {
+      create: vi.fn().mockResolvedValue({}),
+    },
+  };
+}
 
 function transactionMock() {
   return {
@@ -98,6 +111,12 @@ describe("admin ticket cache invalidation", () => {
         ...updatedTicket,
         status,
       } as never);
+      const tx = transactionMock(status);
+      vi.mocked(
+        prisma.$transaction,
+      ).mockImplementation(
+        async (callback: any) => callback(tx),
+      );
 
       vi.mocked(
         prisma.$transaction,
@@ -116,6 +135,9 @@ describe("admin ticket cache invalidation", () => {
             body: JSON.stringify({ 
               status,
               reason: status === "REJECTED" ? "Test reason" : undefined,
+            body: JSON.stringify({
+              status,
+              reason: "Reviewed by admin",
             }),
           },
         ),
@@ -155,6 +177,7 @@ describe("admin ticket cache invalidation", () => {
     tx.ticket.findUnique.mockResolvedValue(existingTicket as never);
     tx.ticket.update.mockResolvedValue(updatedTicket as never);
 
+    const tx = transactionMock("VERIFIED");
     vi.mocked(
       prisma.$transaction,
     ).mockImplementation(
@@ -166,6 +189,9 @@ describe("admin ticket cache invalidation", () => {
     ).mockRejectedValue(
       new Error("Redis connection failed"),
     );
+    vi.mocked(
+      invalidateMatchCachesForTicket,
+    ).mockRejectedValue(new Error("cache down"));
 
     const response = await PATCH(
       new NextRequest(

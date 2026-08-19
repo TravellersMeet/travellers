@@ -3,10 +3,9 @@ import { z } from "zod";
 import { withValidation } from "@/lib/withValidation";
 import {
   applyRateLimitHeaders,
-  checkRateLimit,
-  getRateLimitIdentifier,
   rateLimitExceededResponse,
 } from "@/lib/rate-limit";
+import { enforceRateLimit } from "@/lib/rate-limit-rules";
 
 const chatSchema = z.object({
   message: z.string().min(1, "Message required").max(500, "Message too long (max 500 characters)."),
@@ -16,12 +15,7 @@ export const POST = withValidation(chatSchema, async (req, data) => {
     try {
         // Gate the paid Gemini call so an anonymous visitor can't run up unlimited
         // billed upstream requests (cost-abuse / prompt-injection surface).
-        const rateLimit = await checkRateLimit({
-            namespace: "chat",
-            identifier: getRateLimitIdentifier(req),
-            limit: 10,
-            windowSeconds: 60,
-        });
+        const rateLimit = await enforceRateLimit(req, "chat");
 
         if (!rateLimit.allowed) {
             return rateLimitExceededResponse(rateLimit);

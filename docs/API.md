@@ -123,6 +123,53 @@ Request body:
 }
 ```
 
+### `GET /api/users`
+
+Search other travellers. Requires an authenticated session.
+
+Query parameters:
+
+| Parameter | Type    | Default | Notes |
+| --------- | ------- | ------- | ----- |
+| `search`  | string  | —       | Trimmed. Matched case-insensitively against `name` and `location`. Max 100 characters. |
+| `limit`   | integer | `20`    | Capped at 100. |
+| `cursor`  | string  | —       | Opaque cursor taken from a previous response's `nextCursor`. |
+
+Response:
+
+```json
+{
+  "users": [
+    {
+      "id": "clx...",
+      "name": "Asha Sharma",
+      "image": null,
+      "bio": "Travel enthusiast",
+      "location": "Delhi",
+      "createdAt": "2026-01-04T10:12:00.000Z"
+    }
+  ],
+  "nextCursor": "eyJ2ZXJzaW9uIjox...",
+  "hasMore": true
+}
+```
+
+Privacy rules this endpoint enforces:
+
+- **Email addresses are never returned and are never searched.** Matching on
+  `email` would turn the endpoint into an account-enumeration oracle, and
+  returning it would expose an address that no screen in the product shows.
+- Soft-deleted accounts (`isDeleted: true`) are excluded.
+- The caller is excluded from their own results.
+- Users on either side of a `Block` are excluded, matching the behaviour of
+  `GET /api/conversations`.
+
+Typical responses:
+
+- `200 OK` with the page of results
+- `400 Bad Request` for an invalid `limit`/`cursor` or an over-long `search`
+- `401 Unauthorized` without a session
+
 ## Ticket endpoints
 
 ### `POST /api/tickets`
@@ -240,6 +287,141 @@ Response:
   "cached": false
 }
 ```
+
+## Messaging endpoints
+
+### `GET /api/messages?conversationId=<id>`
+
+Return a page of the conversation transcript. The caller must be a participant,
+otherwise the endpoint responds `404`.
+
+Query parameters:
+
+| Name | Default | Notes |
+| --- | --- | --- |
+| `conversationId` | — | Required. |
+| `limit` | `20` | Capped at `100`. |
+| `cursor` | — | Opaque cursor from a previous `pagination.nextCursor`. |
+
+Response:
+
+```json
+{
+  "items": [{ "id": "msg-3", "text": "See you at the gate", "createdAt": "..." }],
+  "pagination": {
+    "limit": 20,
+    "nextCursor": "eyJ2ZXJzaW9uIjoxLCJ0aW1lc3RhbXAiOiIuLi4iLCJpZCI6Im1zZy0yIn0",
+    "hasMore": true
+  },
+  "messages": [{ "id": "msg-1", "text": "Landing at 6", "createdAt": "..." }]
+}
+```
+
+Two orderings are returned deliberately:
+
+- `items` is newest-first, matching the query order, so `pagination.nextCursor`
+  lines up with the last element.
+- `messages` is the same page re-sorted oldest-first, which is the order a chat
+  transcript is rendered in. Pass `pagination.nextCursor` back as `cursor` to
+  walk further into the past and prepend the result.
+
+`400` is returned for a malformed `limit` or `cursor`.
+
+### `POST /api/messages`
+
+Send a message to a conversation the caller belongs to. Either `text` or
+`routeId` must be present.
+
+Request body:
+
+```json
+{
+  "conversationId": "conv-1",
+  "text": "Booked the 7am bus",
+  "routeId": "route-1"
+}
+```
+
+A `routeId` must belong to the sender; otherwise the endpoint responds `403`.
+On success the created message is broadcast over Pusher to the conversation
+channel and to each participant's personal channel.
+
+### `GET /api/conversations`
+
+List the caller's conversations, most recently updated first, each with the
+other participant and the latest message for the sidebar.
+
+## Notification endpoints
+
+### `GET /api/notifications`
+
+Return one page of the caller's notifications, newest first.
+
+Query parameters:
+
+| Name | Default | Notes |
+| --- | --- | --- |
+| `limit` | `20` | Capped at `100`. |
+| `cursor` | — | Opaque cursor from a previous `pagination.nextCursor`. |
+| `unreadOnly` | `false` | `true` returns only unread notifications. |
+
+Response:
+
+```json
+{
+  "items": [
+    {
+      "id": "ntf-3",
+      "title": "New connection request",
+      "content": "Asha wants to connect",
+      "link": "/dashboard/connections",
+      "read": false,
+      "createdAt": "2026-08-10T09:15:00.000Z"
+    }
+  ],
+  "pagination": {
+    "limit": 20,
+    "nextCursor": "eyJ2ZXJzaW9uIjoxLCJ0aW1lc3RhbXAiOiIuLi4iLCJpZCI6Im50Zi0yIn0",
+    "hasMore": true
+  },
+  "notifications": [],
+  "unreadCount": 4
+}
+```
+
+`notifications` is an alias for `items`, kept for existing consumers.
+
+Notifications whose `expiresAt` has passed are excluded from both the page and
+`unreadCount`. The cron sweeper at `/api/internal/notifications/cleanup` deletes
+them in batches, so read paths cannot assume it has caught up.
+
+`400` is returned for a malformed `limit` or `cursor`.
+
+### `PATCH /api/notifications`
+
+Mark every unread notification as read.
+
+```json
+{ "ok": true, "updated": 12 }
+```
+
+### `DELETE /api/notifications`
+
+Clear the caller's read notifications. Pass `?all=true` to clear unread ones too.
+
+```json
+{ "ok": true, "deleted": 12 }
+```
+
+### `PATCH /api/notifications/[id]` and `PATCH /api/notifications/[id]/read`
+
+Mark a single notification as read. Both routes are equivalent; the `/read`
+form is the one the notification bell uses.
+
+### `DELETE /api/notifications/[id]`
+
+Dismiss a single notification. Responds `404` when the id does not exist or
+belongs to another user.
 
 ## AI chat endpoint
 

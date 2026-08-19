@@ -8,7 +8,6 @@ import {
 } from "@/lib/match-cache";
 
 import redis from "@/lib/redis";
-import { createNotification } from "@/lib/notifications";
 import {
   API_ERROR_CODES,
   logApiError,
@@ -393,18 +392,6 @@ export async function GET(req: NextRequest) {
       cacheKey,
       scoredMatches,
     );
-
-    if (scoredMatches.length > 0) {
-      await createNotification({
-        userId: session.user.id,
-        type: "MATCH_FOUND",
-        title: "New traveller match found",
-        content: `We found ${scoredMatches.length} traveller${
-          scoredMatches.length > 1 ? "s" : ""
-        } matching your destination and travel date.`,
-        link: "/dashboard",
-      });
-    }
 
     const total = scoredMatches.length;
     const skip = (page - 1) * limit;

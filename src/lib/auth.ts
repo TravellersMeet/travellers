@@ -30,7 +30,6 @@ export const { auth, signIn, signOut, handlers } = NextAuth({
     GoogleProvider({
   clientId: process.env.GOOGLE_CLIENT_ID!,
   clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
-  allowDangerousEmailAccountLinking: true,
 }),
     AppleProvider({
       clientId: process.env.APPLE_CLIENT_ID!,
