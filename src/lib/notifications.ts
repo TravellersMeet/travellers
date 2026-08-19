@@ -146,15 +146,78 @@ export async function cleanupExpiredNotifications(
   };
 }
 
+/**
+ * A notification is "active" when it has no expiry, or its expiry is still in
+ * the future.
+ *
+ * `cleanupExpiredNotifications` runs on a cron in batches of at most 500, so
+ * between sweeps there are expired rows still sitting in the table. Read paths
+ * must not depend on the sweeper having caught up — they filter on the same
+ * rule the sweeper deletes by.
+ */
+export function activeNotificationWhere(
+  now = new Date(),
+): {
+  OR: Array<Record<string, unknown>>;
+} {
+  return {
+    OR: [
+      { expiresAt: null },
+      { expiresAt: { gt: now } },
+    ],
+  };
+}
+
 export async function getUnreadNotificationCount(
   userId: string,
+  now = new Date(),
 ) {
   return prisma.notification.count({
     where: {
       userId,
       read: false,
+      ...activeNotificationWhere(now),
     },
   });
+}
+
+/**
+ * Dismiss a single notification.
+ *
+ * Scoped by `userId` via `deleteMany` rather than `delete` so a caller cannot
+ * remove somebody else's row by guessing an id — a missing or foreign id is a
+ * `count` of 0, not a thrown `RecordNotFound`.
+ */
+export async function deleteNotification(
+  id: string,
+  userId: string,
+): Promise<number> {
+  const result = await prisma.notification.deleteMany({
+    where: {
+      id,
+      userId,
+    },
+  });
+
+  return result.count;
+}
+
+/**
+ * Clear a user's notifications. Defaults to the read ones, which is the
+ * "tidy up" action; pass `onlyRead: false` for a full clear.
+ */
+export async function deleteNotificationsForUser(
+  userId: string,
+  { onlyRead = true }: { onlyRead?: boolean } = {},
+): Promise<number> {
+  const result = await prisma.notification.deleteMany({
+    where: {
+      userId,
+      ...(onlyRead ? { read: true } : {}),
+    },
+  });
+
+  return result.count;
 }
 
 export async function markNotificationAsRead(
@@ -183,5 +246,43 @@ export async function markAllNotificationsAsRead(
     data: {
       read: true,
     },
+  });
+}
+
+export interface ListNotificationsParams {
+  userId: string;
+  limit: number;
+  cursorWhere?: Record<string, unknown>;
+  unreadOnly?: boolean;
+  now?: Date;
+}
+
+/**
+ * One page of a user's active notifications, newest first.
+ *
+ * Takes `limit + 1` rows so the caller can hand the result straight to
+ * `createPaginatedResponse`, which uses the extra row to decide `hasMore`.
+ */
+export async function listNotifications({
+  userId,
+  limit,
+  cursorWhere,
+  unreadOnly = false,
+  now = new Date(),
+}: ListNotificationsParams): Promise<Notification[]> {
+  return prisma.notification.findMany({
+    where: {
+      userId,
+      ...(unreadOnly ? { read: false } : {}),
+      AND: [
+        activeNotificationWhere(now),
+        ...(cursorWhere ? [cursorWhere] : []),
+      ],
+    },
+    orderBy: [
+      { createdAt: "desc" },
+      { id: "desc" },
+    ],
+    take: limit + 1,
   });
 }

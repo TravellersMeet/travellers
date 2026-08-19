@@ -4,7 +4,6 @@ import {
   rateLimitExceededResponse,
 } from "@/lib/rate-limit";
 import { enforceRateLimit } from "@/lib/rate-limit-rules";
-import { RATE_LIMIT_CONFIG } from "@/lib/rate-limit-config";
 import type { NextRequest } from "next/server";
 
 export const GET = handlers.GET;
@@ -35,12 +34,6 @@ export async function POST(request: NextRequest): Promise<Response> {
 
   const email = await getCredentialsEmail(request);
   const rateLimit = await enforceRateLimit(request, "authSignin", email);
-  const rateLimit = await checkRateLimit({
-    namespace: "auth:signin",
-    identifier: getRateLimitIdentifier(request, email),
-    limit: RATE_LIMIT_CONFIG.auth.signin.limit,
-    windowSeconds: RATE_LIMIT_CONFIG.auth.signin.windowSeconds,
-  });
 
   if (!rateLimit.allowed) {
     return rateLimitExceededResponse(rateLimit);

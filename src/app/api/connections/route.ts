@@ -1,10 +1,52 @@
 import prisma from "@/lib/prisma";
 import { auth } from "@/lib/auth";
 import { NextRequest, NextResponse } from "next/server";
-import { isBlockedBetween } from "@/lib/blocking";
+import {
+  getBlockedUserIds,
+  isBlockedBetween,
+} from "@/lib/blocking";
+import {
+  buildTimestampCursorWhere,
+  createPaginatedResponse,
+  PaginationError,
+  parsePaginationParams,
+} from "@/lib/pagination";
 import { rateLimitExceededResponse } from "@/lib/rate-limit";
 import { enforceRateLimit } from "@/lib/rate-limit-rules";
 import { triggerPusher } from "@/lib/pusher";
+
+/**
+ * The profile fields shown on a connection card. Matches the projection
+ * /api/conversations and /api/users use.
+ */
+const CONNECTION_USER_SELECT = {
+  id: true,
+  name: true,
+  image: true,
+  bio: true,
+  location: true,
+} as const;
+
+/**
+ * Cap on the two pending-request lists. Pending requests are inherently
+ * short-lived — you accept or decline them — so this is a safety bound rather
+ * than a paging window.
+ */
+const MAX_PENDING_REQUESTS = 100;
+
+/**
+ * Excludes rows where the counterpart is somebody the caller may not interact
+ * with. Blocking is symmetric, so `blockedUserIds` already covers both the
+ * people the caller blocked and the people who blocked them.
+ */
+function excludeBlockedCounterparts(
+  field: "senderId" | "receiverId",
+  blockedUserIds: string[],
+) {
+  return blockedUserIds.length > 0
+    ? { [field]: { notIn: blockedUserIds } }
+    : {};
+}
 
 export async function GET(req: NextRequest) {
   const session = await auth();
@@ -15,82 +57,122 @@ export async function GET(req: NextRequest) {
   const userId = session.user.id;
 
   try {
-    const incoming = await prisma.connectionRequest.findMany({
-      where: {
-        receiverId: userId,
-        status: "PENDING",
-      },
-      include: {
-        sender: {
-          select: {
-            id: true,
-            name: true,
-            image: true,
-            bio: true,
-            location: true,
+    const { limit, cursor } = parsePaginationParams(
+      req.nextUrl.searchParams,
+    );
+    const cursorWhere = buildTimestampCursorWhere(
+      "updatedAt",
+      cursor,
+    );
+
+    // Resolve the block set once. POST already refuses to create or accept a
+    // request across a block; GET was still handing the blocked user back with
+    // their name, photo, bio and location, so the sidebar hid the thread while
+    // the connections page kept rendering the person.
+    const blockedUserIds = await getBlockedUserIds(userId);
+
+    // None of these three depend on each other, so there is no reason to make
+    // the second wait for the first.
+    const [incoming, outgoing, accepted] = await Promise.all([
+      prisma.connectionRequest.findMany({
+        where: {
+          receiverId: userId,
+          status: "PENDING",
+          ...excludeBlockedCounterparts(
+            "senderId",
+            blockedUserIds,
+          ),
+        },
+        include: {
+          sender: {
+            select: CONNECTION_USER_SELECT,
           },
         },
-      },
-      orderBy: { createdAt: "desc" },
-    });
-
-    const outgoing = await prisma.connectionRequest.findMany({
-      where: {
-        senderId: userId,
-        status: "PENDING",
-      },
-      include: {
-        receiver: {
-          select: {
-            id: true,
-            name: true,
-            image: true,
-            bio: true,
-            location: true,
-          },
-        },
-      },
-      orderBy: { createdAt: "desc" },
-    });
-
-    const accepted = await prisma.connectionRequest.findMany({
-      where: {
-        status: "ACCEPTED",
-        OR: [
-          { senderId: userId },
-          { receiverId: userId },
+        orderBy: [
+          { createdAt: "desc" },
+          { id: "desc" },
         ],
-      },
-      include: {
-        sender: {
-          select: {
-            id: true,
-            name: true,
-            image: true,
-            bio: true,
-            location: true,
+        take: MAX_PENDING_REQUESTS,
+      }),
+
+      prisma.connectionRequest.findMany({
+        where: {
+          senderId: userId,
+          status: "PENDING",
+          ...excludeBlockedCounterparts(
+            "receiverId",
+            blockedUserIds,
+          ),
+        },
+        include: {
+          receiver: {
+            select: CONNECTION_USER_SELECT,
           },
         },
-        receiver: {
-          select: {
-            id: true,
-            name: true,
-            image: true,
-            bio: true,
-            location: true,
+        orderBy: [
+          { createdAt: "desc" },
+          { id: "desc" },
+        ],
+        take: MAX_PENDING_REQUESTS,
+      }),
+
+      prisma.connectionRequest.findMany({
+        where: {
+          status: "ACCEPTED",
+          OR: [
+            {
+              senderId: userId,
+              ...excludeBlockedCounterparts(
+                "receiverId",
+                blockedUserIds,
+              ),
+            },
+            {
+              receiverId: userId,
+              ...excludeBlockedCounterparts(
+                "senderId",
+                blockedUserIds,
+              ),
+            },
+          ],
+          ...(cursorWhere ?? {}),
+        },
+        include: {
+          sender: {
+            select: CONNECTION_USER_SELECT,
+          },
+          receiver: {
+            select: CONNECTION_USER_SELECT,
           },
         },
-      },
-      orderBy: { updatedAt: "desc" },
-    });
+        // `updatedAt` alone is not a stable sort — two rows accepted in the
+        // same transaction can swap places between requests, which would make
+        // the cursor skip or repeat a row.
+        orderBy: [
+          { updatedAt: "desc" },
+          { id: "desc" },
+        ],
+        take: limit + 1,
+      }),
+    ]);
+
+    const acceptedPage = createPaginatedResponse(
+      accepted,
+      limit,
+      "updatedAt",
+    );
 
     // Map accepted requests to connection objects representing the other user
-    const connections = accepted.map((req) => {
-      const otherUser = req.senderId === userId ? req.receiver : req.sender;
+    const connections = acceptedPage.items.map((request) => {
+      const otherUser =
+        request.senderId === userId
+          ? request.receiver
+          : request.sender;
+
       return {
-        requestId: req.id,
+        requestId: request.id,
         user: otherUser,
-        connectedAt: req.updatedAt,
+        connectedAt: request.updatedAt,
       };
     });
 
@@ -98,8 +180,16 @@ export async function GET(req: NextRequest) {
       incoming,
       outgoing,
       connections,
+      pagination: acceptedPage.pagination,
     });
   } catch (error) {
+    if (error instanceof PaginationError) {
+      return NextResponse.json(
+        { error: error.message },
+        { status: 400 },
+      );
+    }
+
     console.error("Fetch connections error:", error);
     return NextResponse.json({ error: "Server error" }, { status: 500 });
   }

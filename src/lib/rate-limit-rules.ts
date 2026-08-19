@@ -52,6 +52,16 @@ export const RATE_LIMIT_RULES = {
   /** Password reset confirmation attempts. */
   authResetPassword: {
     namespace: "auth:reset-password",
+  /**
+   * Authenticated password changes.
+   *
+   * The endpoint takes the current password, so leaving it unthrottled makes
+   * it a password oracle behind a stolen or borrowed session cookie — and a
+   * cheaper one than /api/auth/signin, which is throttled. Generous enough
+   * that a user who mistypes their current password a few times is unaffected.
+   */
+  authChangePassword: {
+    namespace: "auth:change-password",
     limit: 5,
     windowSeconds: 15 * 60,
   },

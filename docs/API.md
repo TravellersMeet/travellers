@@ -103,6 +103,24 @@ Request body:
 }
 ```
 
+Typical responses:
+
+- `200 OK` with `ok: true`
+- `400 Bad Request` for a wrong current password, a new password under 8
+  characters, a new password identical to the current one, or an account that
+  signs in through Google/Apple and has no password to change
+- `401 Unauthorized` without a session
+- `404 Not Found` when the account has been deleted
+- `429 Too Many Requests` past 5 attempts in 15 minutes, with `Retry-After`
+
+The endpoint accepts the current password, so it is rate limited on the
+account: without that it is a password oracle for anyone holding a session
+cookie, and a cheaper one than the throttled sign-in route.
+
+All routes that write a password hash use the shared cost factor in
+`src/lib/password.ts` (12 in production, 10 elsewhere) rather than a literal at
+the call site.
+
 ### `GET /api/auth/[...nextauth]` and `POST /api/auth/[...nextauth]`
 
 NextAuth-owned credential authentication route. This handles sign-in and callback operations.
@@ -122,6 +140,53 @@ Request body:
   "location": "Delhi"
 }
 ```
+
+### `GET /api/users`
+
+Search other travellers. Requires an authenticated session.
+
+Query parameters:
+
+| Parameter | Type    | Default | Notes |
+| --------- | ------- | ------- | ----- |
+| `search`  | string  | —       | Trimmed. Matched case-insensitively against `name` and `location`. Max 100 characters. |
+| `limit`   | integer | `20`    | Capped at 100. |
+| `cursor`  | string  | —       | Opaque cursor taken from a previous response's `nextCursor`. |
+
+Response:
+
+```json
+{
+  "users": [
+    {
+      "id": "clx...",
+      "name": "Asha Sharma",
+      "image": null,
+      "bio": "Travel enthusiast",
+      "location": "Delhi",
+      "createdAt": "2026-01-04T10:12:00.000Z"
+    }
+  ],
+  "nextCursor": "eyJ2ZXJzaW9uIjox...",
+  "hasMore": true
+}
+```
+
+Privacy rules this endpoint enforces:
+
+- **Email addresses are never returned and are never searched.** Matching on
+  `email` would turn the endpoint into an account-enumeration oracle, and
+  returning it would expose an address that no screen in the product shows.
+- Soft-deleted accounts (`isDeleted: true`) are excluded.
+- The caller is excluded from their own results.
+- Users on either side of a `Block` are excluded, matching the behaviour of
+  `GET /api/conversations`.
+
+Typical responses:
+
+- `200 OK` with the page of results
+- `400 Bad Request` for an invalid `limit`/`cursor` or an over-long `search`
+- `401 Unauthorized` without a session
 
 ## Ticket endpoints
 
@@ -220,6 +285,65 @@ Fetch a single route belonging to the authenticated user.
 
 Delete a saved route owned by the authenticated user.
 
+## Connection endpoints
+
+### `GET /api/connections`
+
+Return the caller's pending requests in both directions plus a page of their
+accepted connections.
+
+Query parameters:
+
+| Name | Default | Notes |
+| --- | --- | --- |
+| `limit` | `20` | Page size for `connections`. Capped at `100`. |
+| `cursor` | — | Opaque cursor from a previous `pagination.nextCursor`. |
+
+Response:
+
+```json
+{
+  "incoming": [],
+  "outgoing": [],
+  "connections": [
+    {
+      "requestId": "req-1",
+      "user": { "id": "user-2", "name": "Asha", "image": null, "bio": null, "location": "Delhi" },
+      "connectedAt": "2026-08-01T12:00:00.000Z"
+    }
+  ],
+  "pagination": {
+    "limit": 20,
+    "nextCursor": "eyJ2ZXJzaW9uIjox...",
+    "hasMore": false
+  }
+}
+```
+
+`incoming` and `outgoing` are the pending requests, newest first, bounded at
+100 each. `connections` is the cursor-paginated accepted list.
+
+Users on either side of a `Block` are excluded from all three lists, matching
+the behaviour of `GET /api/conversations` and the guards `POST
+/api/connections` already applies to `send` and `accept`.
+
+`400` is returned for a malformed `limit` or `cursor`.
+
+### `POST /api/connections`
+
+Send, accept or decline a connection request.
+
+```json
+{
+  "action": "send",
+  "userId": "user-2"
+}
+```
+
+`action` is one of `send`, `accept`, `decline`. Accepting creates the
+conversation between the two users. All three are rate limited and refuse to
+act across a block.
+
 ## Match discovery endpoint
 
 ### `GET /api/matches?destination=<name>&date=<YYYY-MM-DD>`
@@ -303,6 +427,78 @@ channel and to each participant's personal channel.
 
 List the caller's conversations, most recently updated first, each with the
 other participant and the latest message for the sidebar.
+
+## Notification endpoints
+
+### `GET /api/notifications`
+
+Return one page of the caller's notifications, newest first.
+
+Query parameters:
+
+| Name | Default | Notes |
+| --- | --- | --- |
+| `limit` | `20` | Capped at `100`. |
+| `cursor` | — | Opaque cursor from a previous `pagination.nextCursor`. |
+| `unreadOnly` | `false` | `true` returns only unread notifications. |
+
+Response:
+
+```json
+{
+  "items": [
+    {
+      "id": "ntf-3",
+      "title": "New connection request",
+      "content": "Asha wants to connect",
+      "link": "/dashboard/connections",
+      "read": false,
+      "createdAt": "2026-08-10T09:15:00.000Z"
+    }
+  ],
+  "pagination": {
+    "limit": 20,
+    "nextCursor": "eyJ2ZXJzaW9uIjoxLCJ0aW1lc3RhbXAiOiIuLi4iLCJpZCI6Im50Zi0yIn0",
+    "hasMore": true
+  },
+  "notifications": [],
+  "unreadCount": 4
+}
+```
+
+`notifications` is an alias for `items`, kept for existing consumers.
+
+Notifications whose `expiresAt` has passed are excluded from both the page and
+`unreadCount`. The cron sweeper at `/api/internal/notifications/cleanup` deletes
+them in batches, so read paths cannot assume it has caught up.
+
+`400` is returned for a malformed `limit` or `cursor`.
+
+### `PATCH /api/notifications`
+
+Mark every unread notification as read.
+
+```json
+{ "ok": true, "updated": 12 }
+```
+
+### `DELETE /api/notifications`
+
+Clear the caller's read notifications. Pass `?all=true` to clear unread ones too.
+
+```json
+{ "ok": true, "deleted": 12 }
+```
+
+### `PATCH /api/notifications/[id]` and `PATCH /api/notifications/[id]/read`
+
+Mark a single notification as read. Both routes are equivalent; the `/read`
+form is the one the notification bell uses.
+
+### `DELETE /api/notifications/[id]`
+
+Dismiss a single notification. Responds `404` when the id does not exist or
+belongs to another user.
 
 ## AI chat endpoint
 

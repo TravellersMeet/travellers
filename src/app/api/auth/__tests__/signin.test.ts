@@ -23,6 +23,9 @@ vi.mock("@/lib/rate-limit", () => ({
 import prisma from "@/lib/prisma"
 import { compare } from "bcryptjs"
 import { RATE_LIMIT_CONFIG } from "@/lib/rate-limit-config"
+// Import the mocked module as a namespace instead of rateLimit,
+// which vitest can't resolve at runtime (the @ alias is transform-time only).
+import * as rateLimit from "@/lib/rate-limit"
 
 // Replicate the authorize logic for unit-testing independently of NextAuth internals
 async function authorize(credentials: { email?: string; password?: string }) {
@@ -41,7 +44,7 @@ async function authorize(credentials: { email?: string; password?: string }) {
 beforeEach(() => {
     vi.clearAllMocks()
     
-    const { checkRateLimit } = require("@/lib/rate-limit");
+    const { checkRateLimit } = rateLimit;
     vi.mocked(checkRateLimit).mockResolvedValue({
       allowed: true,
       limit: RATE_LIMIT_CONFIG.auth.signin.limit,

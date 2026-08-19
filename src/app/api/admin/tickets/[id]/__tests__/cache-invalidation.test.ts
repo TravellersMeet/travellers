@@ -11,7 +11,7 @@ import { auth } from "@/lib/auth";
 import { invalidateMatchCachesForTicket } from "@/lib/match-cache";
 import { createNotification } from "@/lib/notifications";
 import prisma from "@/lib/prisma";
-import { PATCH } from "../route";
+import * as ticketRoute from "../route";
 
 vi.mock("@/lib/auth", () => ({
   auth: vi.fn(),
@@ -24,8 +24,8 @@ vi.mock("@/lib/prisma", () => ({
     },
     ticket: {
       findUnique: vi.fn(),
-      update: vi.fn(),
     },
+    $transaction: vi.fn(),
   },
 }));
 
@@ -39,22 +39,48 @@ vi.mock("@/lib/notifications", () => ({
 
 const existingTicket = {
   id: "ticket-1",
+  userId: "traveller-1",
   destination: "Goa",
   departureDate: new Date(
     "2026-08-15T00:00:00.000Z",
   ),
   status: "PENDING",
+  userId: "traveller-1",
 };
 
-const updatedTicket = {
-  ...existingTicket,
-  status: "VERIFIED",
-  user: {
-    id: "traveller-1",
-    name: "Traveller",
-    email: "traveller@example.com",
-  },
-};
+function transactionMock(status: string) {
+  return {
+    ticket: {
+      findUnique: vi
+        .fn()
+        .mockResolvedValue(existingTicket),
+      update: vi.fn().mockResolvedValue({
+        ...existingTicket,
+        status,
+        user: {
+          id: "traveller-1",
+          name: "Traveller",
+          email: "traveller@example.com",
+        },
+      }),
+    },
+    ticketAuditLog: {
+      create: vi.fn().mockResolvedValue({}),
+    },
+  };
+}
+
+function transactionMock() {
+  return {
+    ticket: {
+      findUnique: vi.fn(),
+      update: vi.fn(),
+    },
+    ticketAuditLog: {
+      create: vi.fn(),
+    },
+  };
+}
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -67,30 +93,41 @@ beforeEach(() => {
   ).mockResolvedValue({
     role: "ADMIN",
   } as never);
-  vi.mocked(
-    prisma.ticket.findUnique,
-  ).mockResolvedValue(
-    existingTicket as never,
-  );
-  vi.mocked(
-    prisma.ticket.update,
-  ).mockResolvedValue(
-    updatedTicket as never,
-  );
 });
 
 describe("admin ticket cache invalidation", () => {
   it.each(["VERIFIED", "REJECTED"])(
     "invalidates matching windows when status becomes %s",
     async (status) => {
+      const tx = transactionMock();
+
+      // The route calls prisma.ticket.findUnique outside the transaction first
       vi.mocked(
-        prisma.ticket.update,
-      ).mockResolvedValue({
+        prisma.ticket.findUnique,
+      ).mockResolvedValue(existingTicket as never);
+
+      tx.ticket.findUnique.mockResolvedValue(existingTicket as never);
+      tx.ticket.update.mockResolvedValue({
         ...updatedTicket,
         status,
       } as never);
+      expect(typeof ticketRoute.PATCH).toBe("function");
+
+      const tx = transactionMock(status);
+      vi.mocked(
+        prisma.$transaction,
+      ).mockImplementation(
+        async (callback: any) => callback(tx),
+      );
+
+      vi.mocked(
+        prisma.$transaction,
+      ).mockImplementation(
+        async (callback: any) => callback(tx),
+      );
 
       const response = await PATCH(
+      const response = await ticketRoute.PATCH!(
         new NextRequest(
           "http://localhost/api/admin/tickets/ticket-1",
           {
@@ -98,7 +135,13 @@ describe("admin ticket cache invalidation", () => {
             headers: {
               "content-type": "application/json",
             },
-            body: JSON.stringify({ status }),
+            body: JSON.stringify({ 
+              status,
+              reason: status === "REJECTED" ? "Test reason" : undefined,
+            body: JSON.stringify({
+              status,
+              reason: "Reviewed by admin",
+            }),
           },
         ),
         {
@@ -128,11 +171,33 @@ describe("admin ticket cache invalidation", () => {
   );
 
   it("does not fail verification when invalidation fails safely", async () => {
+    const tx = transactionMock();
+
+    vi.mocked(
+      prisma.ticket.findUnique,
+    ).mockResolvedValue(existingTicket as never);
+
+    tx.ticket.findUnique.mockResolvedValue(existingTicket as never);
+    tx.ticket.update.mockResolvedValue(updatedTicket as never);
+    expect(typeof ticketRoute.PATCH).toBe("function");
+
+    const tx = transactionMock("VERIFIED");
+    vi.mocked(
+      prisma.$transaction,
+    ).mockImplementation(
+      async (callback: any) => callback(tx),
+    );
+
     vi.mocked(
       invalidateMatchCachesForTicket,
-    ).mockResolvedValue(undefined);
+    ).mockRejectedValue(
+      new Error("Redis connection failed"),
+    );
+    vi.mocked(
+      invalidateMatchCachesForTicket,
+    ).mockRejectedValue(new Error("cache down"));
 
-    const response = await PATCH(
+    const response = await ticketRoute.PATCH!(
       new NextRequest(
         "http://localhost/api/admin/tickets/ticket-1",
         {

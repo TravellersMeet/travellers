@@ -1,7 +1,7 @@
 import prisma from "@/lib/prisma";
 import { NextRequest, NextResponse } from "next/server";
-import { hash } from "bcryptjs";
 import { z } from "zod";
+import { hashPassword } from "@/lib/password";
 import { withValidation } from "@/lib/withValidation";
 import {
   applyRateLimitHeaders,
@@ -44,9 +44,9 @@ export const POST = withValidation(resetPasswordSchema, async (req, data) => {
       ) as NextResponse;
     }
 
-    // Hash the new password
-    const saltRounds = process.env.NODE_ENV === "production" ? 12 : 10;
-    const passwordHash = await hash(password, saltRounds);
+    // Hash the new password. The cost factor lives in src/lib/password.ts so
+    // it cannot drift between the routes that write a password hash.
+    const passwordHash = await hashPassword(password);
 
     // Update user password and clear reset token fields
     await prisma.user.update({

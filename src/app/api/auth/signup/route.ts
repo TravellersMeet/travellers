@@ -11,7 +11,6 @@ import {
   rateLimitExceededResponse,
 } from "@/lib/rate-limit";
 import { enforceRateLimit } from "@/lib/rate-limit-rules";
-import { RATE_LIMIT_CONFIG } from "@/lib/rate-limit-config";
 
 const signupSchema = z.object({
   name: z.string().min(1, "Name required"),
@@ -28,12 +27,6 @@ export const POST = withValidation(
       const { name, email, password } = data;
 
       const rateLimit = await enforceRateLimit(_req, "authSignup", email);
-      const rateLimit = await checkRateLimit({
-        namespace: "auth:signup",
-        identifier: getRateLimitIdentifier(_req, email),
-        limit: RATE_LIMIT_CONFIG.auth.signup.limit,
-        windowSeconds: RATE_LIMIT_CONFIG.auth.signup.windowSeconds,
-      });
 
       if (!rateLimit.allowed) {
         return rateLimitExceededResponse(rateLimit);
