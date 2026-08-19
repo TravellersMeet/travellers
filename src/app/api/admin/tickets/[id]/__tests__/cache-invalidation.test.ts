@@ -11,7 +11,7 @@ import { auth } from "@/lib/auth";
 import { invalidateMatchCachesForTicket } from "@/lib/match-cache";
 import { createNotification } from "@/lib/notifications";
 import prisma from "@/lib/prisma";
-import { PATCH } from "../route";
+import * as ticketRoute from "../route";
 
 vi.mock("@/lib/auth", () => ({
   auth: vi.fn(),
@@ -111,6 +111,8 @@ describe("admin ticket cache invalidation", () => {
         ...updatedTicket,
         status,
       } as never);
+      expect(typeof ticketRoute.PATCH).toBe("function");
+
       const tx = transactionMock(status);
       vi.mocked(
         prisma.$transaction,
@@ -125,6 +127,7 @@ describe("admin ticket cache invalidation", () => {
       );
 
       const response = await PATCH(
+      const response = await ticketRoute.PATCH!(
         new NextRequest(
           "http://localhost/api/admin/tickets/ticket-1",
           {
@@ -176,6 +179,7 @@ describe("admin ticket cache invalidation", () => {
 
     tx.ticket.findUnique.mockResolvedValue(existingTicket as never);
     tx.ticket.update.mockResolvedValue(updatedTicket as never);
+    expect(typeof ticketRoute.PATCH).toBe("function");
 
     const tx = transactionMock("VERIFIED");
     vi.mocked(
@@ -193,7 +197,7 @@ describe("admin ticket cache invalidation", () => {
       invalidateMatchCachesForTicket,
     ).mockRejectedValue(new Error("cache down"));
 
-    const response = await PATCH(
+    const response = await ticketRoute.PATCH!(
       new NextRequest(
         "http://localhost/api/admin/tickets/ticket-1",
         {
