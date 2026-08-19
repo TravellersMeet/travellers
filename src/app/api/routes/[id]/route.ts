@@ -27,7 +27,7 @@ export async function GET(
       );
     }
 
-    const route = await prisma.route.findUnique({
+    const route = await prisma.route.findFirst({
       where: {
         id: params.id,
         userId: session.user.id,
