@@ -57,6 +57,8 @@ model User {
   reportsSent      Report[]            @relation("Reporter")
   reportsRecvd     Report[]            @relation("Reported")
 
+  ticketAuditLogs TicketAuditLog[] @relation("TicketAuditAdmin")
+
   @@index([email])
 }
 
@@ -88,19 +90,39 @@ model Report {
 }
 
 model Ticket {
-  id            String       @id @default(cuid())
-  user          User         @relation(fields: [userId], references: [id])
+  id            String           @id @default(cuid())
+  user          User             @relation(fields: [userId], references: [id])
   userId        String
   destination   String
   departureDate DateTime
   ticketUrl     String
-  status        TicketStatus @default(PENDING)
+  status        TicketStatus     @default(PENDING)
   tripPurpose   String?
-  createdAt     DateTime     @default(now())
-  updatedAt     DateTime     @updatedAt
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+  auditLogs     TicketAuditLog[]
 
   @@index([destination, departureDate])
   @@index([userId])
+}
+
+model TicketAuditLog {
+  id String @id @default(cuid())
+
+  ticketId String
+  ticket   Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  adminId        String
+  admin          User         @relation("TicketAuditAdmin", fields: [adminId], references: [id], onDelete: Restrict)
+  previousStatus TicketStatus
+  newStatus      TicketStatus
+  reason         String?      @db.Text
+  requestId      String
+  createdAt      DateTime     @default(now())
+
+  @@index([ticketId, createdAt, id])
+  @@index([adminId, createdAt])
+  @@index([requestId])
 }
 
 model Notification {
@@ -330,9 +352,9 @@ model AssetCleanupJob {
   ownerId  String
   publicId String
 
-  attempts     Int       @default(0)
-  completedAt  DateTime?
-  lastError    String?
+  attempts      Int       @default(0)
+  completedAt   DateTime?
+  lastError     String?
   nextAttemptAt DateTime?
 
   createdAt DateTime @default(now())

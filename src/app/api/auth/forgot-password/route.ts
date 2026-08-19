@@ -6,10 +6,9 @@ import { sendPasswordResetEmail } from "@/lib/email";
 import { withValidation } from "@/lib/withValidation";
 import {
   applyRateLimitHeaders,
-  checkRateLimit,
-  getRateLimitIdentifier,
   rateLimitExceededResponse,
 } from "@/lib/rate-limit";
+import { enforceRateLimit } from "@/lib/rate-limit-rules";
 
 const forgotPasswordSchema = z.object({
   email: z.string().email("Invalid email address"),
@@ -19,12 +18,7 @@ export const POST = withValidation(forgotPasswordSchema, async (req, data) => {
   try {
     const { email } = data;
 
-    const rateLimit = await checkRateLimit({
-      namespace: "auth:forgot-password",
-      identifier: getRateLimitIdentifier(req, email),
-      limit: 3,
-      windowSeconds: 15 * 60,
-    });
+    const rateLimit = await enforceRateLimit(req, "authForgotPassword", email);
 
     if (!rateLimit.allowed) {
       return rateLimitExceededResponse(rateLimit);

@@ -5,7 +5,7 @@ import {
   it,
   vi,
 } from "vitest";
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
 const { hashMock } = vi.hoisted(() => ({
   hashMock: vi.fn(),
@@ -26,6 +26,7 @@ vi.mock("@/lib/prisma", () => ({
 
 vi.mock("@/lib/otp", () => ({
   generateOTP: vi.fn(() => "123456"),
+  hashOTP: vi.fn((otp) => otp),
   isValidOTPFormat: vi.fn(() => true),
 }));
 
@@ -37,8 +38,19 @@ vi.mock("@/lib/email", () => ({
   ),
 }));
 
+vi.mock("@/lib/rate-limit", () => ({
+  checkRateLimit: vi.fn(),
+  applyRateLimitHeaders: vi.fn((response) => response),
+  rateLimitExceededResponse: vi.fn(),
+  getRateLimitIdentifier: vi.fn((req, email) => email || "127.0.0.1"),
+}));
+
 import prisma from "@/lib/prisma";
 import { POST } from "../signup/route";
+import { RATE_LIMIT_CONFIG } from "@/lib/rate-limit-config";
+// Import the mocked module as a namespace instead of rateLimit,
+// which vitest can't resolve at runtime (the @ alias is transform-time only).
+import * as rateLimit from "@/lib/rate-limit";
 
 const createRequest = (
   data: Record<string, string>,
@@ -60,6 +72,16 @@ describe("POST /api/auth/signup", () => {
     vi.unstubAllEnvs();
 
     hashMock.mockResolvedValue("mock-password-hash");
+    
+    const { checkRateLimit } = rateLimit;
+    vi.mocked(checkRateLimit).mockResolvedValue({
+      allowed: true,
+      limit: RATE_LIMIT_CONFIG.auth.signup.limit,
+      remaining: RATE_LIMIT_CONFIG.auth.signup.limit - 1,
+      resetAt: Date.now() + RATE_LIMIT_CONFIG.auth.signup.windowSeconds * 1000,
+      retryAfter: 0,
+      bypassed: false,
+    });
   });
 
   it("returns 400 for missing name", async () => {
@@ -179,5 +201,74 @@ describe("POST /api/auth/signup", () => {
       "password123",
       12,
     );
+  });
+
+  it("uses configured rate limits from environment", async () => {
+    const { checkRateLimit } = rateLimit;
+    
+    vi.mocked(checkRateLimit).mockResolvedValue({
+      allowed: true,
+      limit: RATE_LIMIT_CONFIG.auth.signup.limit,
+      remaining: RATE_LIMIT_CONFIG.auth.signup.limit - 1,
+      resetAt: Date.now() + RATE_LIMIT_CONFIG.auth.signup.windowSeconds * 1000,
+      retryAfter: 0,
+      bypassed: false,
+    });
+
+    vi.mocked(prisma.user.findUnique).mockResolvedValue(null);
+    vi.mocked(prisma.user.create).mockResolvedValue({
+      id: "user-1",
+      email: "test@example.com",
+      name: "Test User",
+      passwordHash: "mock-password-hash",
+      otp: "123456",
+      otpExpires: new Date(),
+    } as never);
+
+    const request = createRequest({
+      name: "Test User",
+      email: "test@example.com",
+      password: "password123",
+    });
+
+    const response = await POST(request);
+
+    expect(checkRateLimit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        namespace: "auth:signup",
+        limit: RATE_LIMIT_CONFIG.auth.signup.limit,
+        windowSeconds: RATE_LIMIT_CONFIG.auth.signup.windowSeconds,
+      })
+    );
+  });
+
+  it("returns 429 when rate limit is exceeded", async () => {
+    const { checkRateLimit, rateLimitExceededResponse } = rateLimit;
+    
+    vi.mocked(checkRateLimit).mockResolvedValue({
+      allowed: false,
+      limit: RATE_LIMIT_CONFIG.auth.signup.limit,
+      remaining: 0,
+      resetAt: Date.now() + RATE_LIMIT_CONFIG.auth.signup.windowSeconds * 1000,
+      retryAfter: RATE_LIMIT_CONFIG.auth.signup.windowSeconds,
+      bypassed: false,
+    });
+
+    vi.mocked(rateLimitExceededResponse).mockReturnValue(
+      NextResponse.json(
+        { error: "Too many requests", retryAfter: RATE_LIMIT_CONFIG.auth.signup.windowSeconds },
+        { status: 429 },
+      ),
+    );
+
+    const request = createRequest({
+      name: "Test User",
+      email: "test@example.com",
+      password: "password123",
+    });
+
+    const response = await POST(request);
+
+    expect(response.status).toBe(429);
   });
 });

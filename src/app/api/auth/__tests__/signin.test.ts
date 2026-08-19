@@ -13,8 +13,19 @@ vi.mock("@/lib/prisma", () => ({
     },
 }))
 
+vi.mock("@/lib/rate-limit", () => ({
+  checkRateLimit: vi.fn(),
+  applyRateLimitHeaders: vi.fn((response) => response),
+  rateLimitExceededResponse: vi.fn(),
+  getRateLimitIdentifier: vi.fn((req, email) => email || "127.0.0.1"),
+}))
+
 import prisma from "@/lib/prisma"
 import { compare } from "bcryptjs"
+import { RATE_LIMIT_CONFIG } from "@/lib/rate-limit-config"
+// Import the mocked module as a namespace instead of rateLimit,
+// which vitest can't resolve at runtime (the @ alias is transform-time only).
+import * as rateLimit from "@/lib/rate-limit"
 
 // Replicate the authorize logic for unit-testing independently of NextAuth internals
 async function authorize(credentials: { email?: string; password?: string }) {
@@ -32,6 +43,16 @@ async function authorize(credentials: { email?: string; password?: string }) {
 
 beforeEach(() => {
     vi.clearAllMocks()
+    
+    const { checkRateLimit } = rateLimit;
+    vi.mocked(checkRateLimit).mockResolvedValue({
+      allowed: true,
+      limit: RATE_LIMIT_CONFIG.auth.signin.limit,
+      remaining: RATE_LIMIT_CONFIG.auth.signin.limit - 1,
+      resetAt: Date.now() + RATE_LIMIT_CONFIG.auth.signin.windowSeconds * 1000,
+      retryAfter: 0,
+      bypassed: false,
+    });
 })
 
 describe("Credentials authorize logic", () => {
@@ -82,5 +103,10 @@ describe("Credentials authorize logic", () => {
             email: "test@example.com",
             name: "Tester",
         })
+    })
+
+    it("uses configured rate limits for signin", () => {
+        expect(RATE_LIMIT_CONFIG.auth.signin.limit).toBe(10);
+        expect(RATE_LIMIT_CONFIG.auth.signin.windowSeconds).toBe(600);
     })
 })

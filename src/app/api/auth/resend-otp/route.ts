@@ -6,10 +6,9 @@ import { sendOTPEmail } from "@/lib/email";
 import { withValidation } from "@/lib/withValidation";
 import {
   applyRateLimitHeaders,
-  checkRateLimit,
-  getRateLimitIdentifier,
   rateLimitExceededResponse,
 } from "@/lib/rate-limit";
+import { enforceRateLimit } from "@/lib/rate-limit-rules";
 
 const resendSchema = z.object({
   email: z.string().email("Invalid email"),
@@ -19,12 +18,7 @@ export const POST = withValidation(resendSchema, async (req, data) => {
   try {
     const { email } = data;
 
-    const rateLimit = await checkRateLimit({
-      namespace: "auth:resend-otp",
-      identifier: getRateLimitIdentifier(req, email),
-      limit: 3,
-      windowSeconds: 10 * 60,
-    });
+    const rateLimit = await enforceRateLimit(req, "authResendOtp", email);
 
     if (!rateLimit.allowed) {
       return rateLimitExceededResponse(rateLimit);

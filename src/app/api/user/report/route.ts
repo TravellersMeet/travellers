@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { z } from "zod";
+import {
+  applyRateLimitHeaders,
+  rateLimitExceededResponse,
+} from "@/lib/rate-limit";
+import { enforceRateLimit } from "@/lib/rate-limit-rules";
 import { withValidation } from "@/lib/withValidation";
 
 const ReportSchema = z.object({
@@ -19,6 +24,18 @@ export const POST = withValidation(ReportSchema, async (request, validatedData) 
         { error: "Unauthorized" },
         { status: 401 }
       );
+    }
+
+    // Filing reports in bulk is itself an abuse vector against the moderation
+    // queue, so this limit is deliberately tighter than the others.
+    const rateLimit = await enforceRateLimit(
+      request,
+      "userReport",
+      session.user.id,
+    );
+
+    if (!rateLimit.allowed) {
+      return rateLimitExceededResponse(rateLimit);
     }
 
     const { reportedId, reason, details } = validatedData;
@@ -52,7 +69,10 @@ export const POST = withValidation(ReportSchema, async (request, validatedData) 
       },
     });
 
-    return NextResponse.json({ success: true, reportId: report.id }, { status: 201 });
+    return applyRateLimitHeaders(
+      NextResponse.json({ success: true, reportId: report.id }, { status: 201 }),
+      rateLimit,
+    ) as NextResponse;
   } catch (error) {
     console.error("Error creating report:", error);
     return NextResponse.json(
