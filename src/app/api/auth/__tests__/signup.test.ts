@@ -5,7 +5,7 @@ import {
   it,
   vi,
 } from "vitest";
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
 const { hashMock } = vi.hoisted(() => ({
   hashMock: vi.fn(),
@@ -26,6 +26,7 @@ vi.mock("@/lib/prisma", () => ({
 
 vi.mock("@/lib/otp", () => ({
   generateOTP: vi.fn(() => "123456"),
+  hashOTP: vi.fn((otp) => otp),
   isValidOTPFormat: vi.fn(() => true),
 }));
 
@@ -47,6 +48,9 @@ vi.mock("@/lib/rate-limit", () => ({
 import prisma from "@/lib/prisma";
 import { POST } from "../signup/route";
 import { RATE_LIMIT_CONFIG } from "@/lib/rate-limit-config";
+// Import the mocked module as a namespace instead of rateLimit,
+// which vitest can't resolve at runtime (the @ alias is transform-time only).
+import * as rateLimit from "@/lib/rate-limit";
 
 const createRequest = (
   data: Record<string, string>,
@@ -69,7 +73,7 @@ describe("POST /api/auth/signup", () => {
 
     hashMock.mockResolvedValue("mock-password-hash");
     
-    const { checkRateLimit } = require("@/lib/rate-limit");
+    const { checkRateLimit } = rateLimit;
     vi.mocked(checkRateLimit).mockResolvedValue({
       allowed: true,
       limit: RATE_LIMIT_CONFIG.auth.signup.limit,
@@ -200,7 +204,7 @@ describe("POST /api/auth/signup", () => {
   });
 
   it("uses configured rate limits from environment", async () => {
-    const { checkRateLimit } = require("@/lib/rate-limit");
+    const { checkRateLimit } = rateLimit;
     
     vi.mocked(checkRateLimit).mockResolvedValue({
       allowed: true,
@@ -239,7 +243,7 @@ describe("POST /api/auth/signup", () => {
   });
 
   it("returns 429 when rate limit is exceeded", async () => {
-    const { checkRateLimit, rateLimitExceededResponse } = require("@/lib/rate-limit");
+    const { checkRateLimit, rateLimitExceededResponse } = rateLimit;
     
     vi.mocked(checkRateLimit).mockResolvedValue({
       allowed: false,
@@ -250,10 +254,12 @@ describe("POST /api/auth/signup", () => {
       bypassed: false,
     });
 
-    vi.mocked(rateLimitExceededResponse).mockReturnValue({
-      status: 429,
-      json: async () => ({ error: "Too many requests", retryAfter: RATE_LIMIT_CONFIG.auth.signup.windowSeconds }),
-    });
+    vi.mocked(rateLimitExceededResponse).mockReturnValue(
+      NextResponse.json(
+        { error: "Too many requests", retryAfter: RATE_LIMIT_CONFIG.auth.signup.windowSeconds },
+        { status: 429 },
+      ),
+    );
 
     const request = createRequest({
       name: "Test User",

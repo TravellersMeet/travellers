@@ -18,7 +18,7 @@ jobs:
       - name: Use Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18.18.0'
+          node-version: '22'
           cache: 'npm'
       - name: Show versions
         run: |
@@ -33,6 +33,8 @@ jobs:
         run: npm run lint -- --no-cache
       - name: Type check
         run: npx tsc --noEmit
+      - name: Test
+        run: npm test
       - name: Build
-        
+
         run: npx next build
