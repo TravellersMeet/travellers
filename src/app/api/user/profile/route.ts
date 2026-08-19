@@ -43,10 +43,11 @@ export async function GET(request: NextRequest) {
         age: true,
         gender: true,
         travelStyle: true,
+        isDeleted: true,
       },
     });
 
-    if (!user) {
+    if (!user || user.isDeleted) {
       return apiError(
         requestId,
         API_ERROR_CODES.NOT_FOUND,
@@ -55,7 +56,9 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    return apiJson(user, requestId);
+    const { isDeleted, ...profile } = user;
+
+    return apiJson(profile, requestId);
   } catch (error) {
     logApiError(requestId, "Profile fetch failed", error);
 
@@ -97,6 +100,20 @@ export async function PATCH(request: NextRequest) {
   }
 
   try {
+    const existingUser = await prisma.user.findUnique({
+      where: { email: session.user.email },
+      select: { isDeleted: true },
+    });
+
+    if (!existingUser || existingUser.isDeleted) {
+      return apiError(
+        requestId,
+        API_ERROR_CODES.NOT_FOUND,
+        "User profile was not found",
+        404,
+      );
+    }
+
     const ageValue = body.age;
     const parsedAge =
       ageValue !== undefined && ageValue !== null
