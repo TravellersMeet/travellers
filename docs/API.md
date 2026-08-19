@@ -103,6 +103,24 @@ Request body:
 }
 ```
 
+Typical responses:
+
+- `200 OK` with `ok: true`
+- `400 Bad Request` for a wrong current password, a new password under 8
+  characters, a new password identical to the current one, or an account that
+  signs in through Google/Apple and has no password to change
+- `401 Unauthorized` without a session
+- `404 Not Found` when the account has been deleted
+- `429 Too Many Requests` past 5 attempts in 15 minutes, with `Retry-After`
+
+The endpoint accepts the current password, so it is rate limited on the
+account: without that it is a password oracle for anyone holding a session
+cookie, and a cheaper one than the throttled sign-in route.
+
+All routes that write a password hash use the shared cost factor in
+`src/lib/password.ts` (12 in production, 10 elsewhere) rather than a literal at
+the call site.
+
 ### `GET /api/auth/[...nextauth]` and `POST /api/auth/[...nextauth]`
 
 NextAuth-owned credential authentication route. This handles sign-in and callback operations.

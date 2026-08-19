@@ -49,6 +49,19 @@ export const RATE_LIMIT_RULES = {
     limit: 3,
     windowSeconds: 15 * 60,
   },
+  /**
+   * Authenticated password changes.
+   *
+   * The endpoint takes the current password, so leaving it unthrottled makes
+   * it a password oracle behind a stolen or borrowed session cookie — and a
+   * cheaper one than /api/auth/signin, which is throttled. Generous enough
+   * that a user who mistypes their current password a few times is unaffected.
+   */
+  authChangePassword: {
+    namespace: "auth:change-password",
+    limit: 5,
+    windowSeconds: 15 * 60,
+  },
   /** Gemini calls, which are billed per request. */
   chat: {
     namespace: "chat",
