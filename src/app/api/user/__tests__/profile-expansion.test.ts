@@ -172,6 +172,9 @@ const res = await profileGET(
           gender: undefined,
           travelStyle: undefined,
         },
+        // PATCH now returns a non-sensitive projection (excludes passwordHash,
+        // otp, resetToken, ...) — the exact fields aren't asserted here.
+        select: expect.any(Object),
       });
     });
   });

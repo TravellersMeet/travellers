@@ -173,6 +173,28 @@ export async function PATCH(request: NextRequest) {
             ? body.travelStyle
             : undefined,
       },
+      // Return only non-sensitive columns — Prisma's default update returns the
+      // whole row (passwordHash, otp, resetToken, ...). Mirror the GET projection.
+      select: {
+        name: true,
+        email: true,
+        bio: true,
+        location: true,
+        image: true,
+        homeLocation: true,
+        phone: true,
+        emailVerified: true,
+        createdAt: true,
+        languages: true,
+        travelInterests: true,
+        accommodationPrefs: true,
+        budgetRange: true,
+        socialLinks: true,
+        age: true,
+        gender: true,
+        travelStyle: true,
+        isDeleted: true,
+      },
     });
 
     return apiJson(updatedUser, requestId);
