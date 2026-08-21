@@ -1,0 +1,3 @@
+export const MAX_CHECKLIST_TEXT_LENGTH = 200;
+
+export const MAX_CHECKLIST_ITEMS_PER_PLAN = 200;

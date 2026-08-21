@@ -6,11 +6,14 @@ import prisma from "@/lib/prisma";
 import {
   DELETE,
   GET,
-  MAX_CHECKLIST_ITEMS_PER_PLAN,
-  MAX_CHECKLIST_TEXT_LENGTH,
   PATCH,
   POST,
 } from "../route";
+
+import {
+  MAX_CHECKLIST_ITEMS_PER_PLAN,
+  MAX_CHECKLIST_TEXT_LENGTH,
+} from "../constants";
 
 vi.mock("@/lib/prisma", () => ({
   default: {
