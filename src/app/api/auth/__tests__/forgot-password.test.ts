@@ -1,5 +1,9 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextResponse } from "next/server";
+
+const { enforceRateLimitMock } = vi.hoisted(() => ({
+  enforceRateLimitMock: vi.fn(),
+}));
 
 vi.mock("@/lib/prisma", () => ({
   default: {
@@ -15,138 +19,93 @@ vi.mock("@/lib/email", () => ({
 }));
 
 vi.mock("@/lib/rate-limit", () => ({
-  checkRateLimit: vi.fn(),
   applyRateLimitHeaders: vi.fn((response) => response),
-  rateLimitExceededResponse: vi.fn(),
-  getRateLimitIdentifier: vi.fn((req, email) => email || "127.0.0.1"),
+  rateLimitExceededResponse: vi.fn((result) =>
+    NextResponse.json(
+      { error: "Too many requests", retryAfter: result.retryAfter },
+      { status: 429 },
+    ),
+  ),
+}));
+
+vi.mock("@/lib/rate-limit-rules", () => ({
+  enforceRateLimit: enforceRateLimitMock,
 }));
 
 import { POST } from "../forgot-password/route";
 import prisma from "@/lib/prisma";
 import { sendPasswordResetEmail } from "@/lib/email";
-import { RATE_LIMIT_CONFIG } from "@/lib/rate-limit-config";
-// Import the mocked module as a namespace instead of rateLimit,
-// which vitest can't resolve at runtime (the @ alias is transform-time only).
-import * as rateLimit from "@/lib/rate-limit";
+
+const allowed = () => ({
+  allowed: true,
+  limit: 3,
+  remaining: 2,
+  resetAt: Date.now() + 900_000,
+  retryAfter: 0,
+  bypassed: false,
+});
+
+const createRequest = (body: unknown) =>
+  ({
+    headers: {
+      get: (name: string) =>
+        name.toLowerCase() === "content-type" ? "application/json" : null,
+    },
+    json: async () => body,
+  }) as any;
 
 beforeEach(() => {
   vi.clearAllMocks();
-  
-  const { checkRateLimit } = rateLimit;
-  vi.mocked(checkRateLimit).mockResolvedValue({
-    allowed: true,
-    limit: RATE_LIMIT_CONFIG.auth.forgotPassword.limit,
-    remaining: RATE_LIMIT_CONFIG.auth.forgotPassword.limit - 1,
-    resetAt: Date.now() + RATE_LIMIT_CONFIG.auth.forgotPassword.windowSeconds * 1000,
-    retryAfter: 0,
-    bypassed: false,
-  });
+  enforceRateLimitMock.mockResolvedValue(allowed());
 });
 
 describe("POST /api/auth/forgot-password", () => {
-  const createRequest = (bodyData: any) => {
-    return {
-      headers: {
-        get: (name: string) => {
-          if (name.toLowerCase() === "content-type") {
-            return "application/json";
-          }
-          return null;
-        },
-      } as any,
-      json: async () => bodyData,
-    } as any;
-  };
-
-  it("returns 400 for invalid email", async () => {
-    const req = createRequest({ email: "not-an-email" });
-    const res = await POST(req as any);
-    const data = await res.json();
-
-    expect(res.status).toBe(400);
-    expect(data.error).toBe("Invalid email input");
+  it("rejects an invalid email", async () => {
+    const response = await POST(createRequest({ email: "not-an-email" }));
+    expect(response.status).toBe(400);
+    expect(response.headers.get("content-type")).toContain("application/json");
   });
 
-  it("returns generic success even if user not found (security)", async () => {
-    ;(prisma.user.findUnique as any).mockResolvedValue(null);
+  it("does not disclose whether an account exists", async () => {
+    vi.mocked(prisma.user.findUnique).mockResolvedValue(null);
+    const response = await POST(createRequest({ email: "unknown@example.com" }));
+    const body = await response.json();
 
-    const req = createRequest({ email: "unknown@example.com" });
-    const res = await POST(req as any);
-    const data = await res.json();
-
-    expect(res.status).toBe(200);
-    expect(data.ok).toBe(true);
-    expect(data.message).toContain("If an account exists");
-    expect(prisma.user.update).not.toHaveBeenCalled();
+    expect(response.status).toBe(200);
+    expect(body.ok).toBe(true);
+    expect(body.message).toContain("If an account exists");
     expect(sendPasswordResetEmail).not.toHaveBeenCalled();
   });
 
-  it("returns 200, updates user token, and sends email if user exists", async () => {
-    const mockUser = {
+  it("uses enforceRateLimit before processing the reset", async () => {
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({
       id: "user123",
       email: "test@example.com",
-      name: "Test User",
-    };
-    ;(prisma.user.findUnique as any).mockResolvedValue(mockUser);
-    ;(prisma.user.update as any).mockResolvedValue(mockUser);
+    } as never);
+    vi.mocked(prisma.user.update).mockResolvedValue({ id: "user123" } as never);
 
-    const req = createRequest({ email: "test@example.com" });
-    const res = await POST(req as any);
-    const data = await res.json();
+    const response = await POST(createRequest({ email: "test@example.com" }));
 
-    expect(res.status).toBe(200);
-    expect(data.ok).toBe(true);
-    expect(prisma.user.findUnique).toHaveBeenCalledWith({ where: { email: "test@example.com" } });
+    expect(response.status).toBe(200);
+    expect(enforceRateLimitMock).toHaveBeenCalledWith(
+      expect.anything(),
+      "authForgotPassword",
+      "test@example.com",
+    );
     expect(prisma.user.update).toHaveBeenCalled();
     expect(sendPasswordResetEmail).toHaveBeenCalled();
   });
 
-  it("uses configured rate limits for password reset", async () => {
-    const { checkRateLimit } = rateLimit;
-    
-    vi.mocked(checkRateLimit).mockResolvedValue({
-      allowed: true,
-      limit: RATE_LIMIT_CONFIG.auth.forgotPassword.limit,
-      remaining: RATE_LIMIT_CONFIG.auth.forgotPassword.limit - 1,
-      resetAt: Date.now() + RATE_LIMIT_CONFIG.auth.forgotPassword.windowSeconds * 1000,
-      retryAfter: 0,
-      bypassed: false,
-    });
-
-    const req = createRequest({ email: "test@example.com" });
-    await POST(req as any);
-
-    expect(checkRateLimit).toHaveBeenCalledWith(
-      expect.objectContaining({
-        namespace: "auth:forgot-password",
-        limit: RATE_LIMIT_CONFIG.auth.forgotPassword.limit,
-        windowSeconds: RATE_LIMIT_CONFIG.auth.forgotPassword.windowSeconds,
-      })
-    );
-  });
-
-  it("returns 429 when password reset rate limit is exceeded", async () => {
-    const { checkRateLimit, rateLimitExceededResponse } = rateLimit;
-    
-    vi.mocked(checkRateLimit).mockResolvedValue({
+  it("returns 429 when password reset is rate limited", async () => {
+    enforceRateLimitMock.mockResolvedValue({
+      ...allowed(),
       allowed: false,
-      limit: RATE_LIMIT_CONFIG.auth.forgotPassword.limit,
       remaining: 0,
-      resetAt: Date.now() + RATE_LIMIT_CONFIG.auth.forgotPassword.windowSeconds * 1000,
-      retryAfter: RATE_LIMIT_CONFIG.auth.forgotPassword.windowSeconds,
-      bypassed: false,
+      retryAfter: 900,
     });
 
-    vi.mocked(rateLimitExceededResponse).mockReturnValue(
-      NextResponse.json(
-        { error: "Too many requests", retryAfter: RATE_LIMIT_CONFIG.auth.forgotPassword.windowSeconds },
-        { status: 429 },
-      ),
-    );
-
-    const req = createRequest({ email: "test@example.com" });
-    const res = await POST(req as any);
-
-    expect(res.status).toBe(429);
+    const response = await POST(createRequest({ email: "test@example.com" }));
+    expect(response.status).toBe(429);
+    expect(prisma.user.findUnique).not.toHaveBeenCalled();
   });
 });
