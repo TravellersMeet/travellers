@@ -89,6 +89,14 @@ model Report {
   @@index([reportedId])
 }
 
+enum TicketVerificationStatus {
+  PENDING
+  PROCESSING
+  PASSED
+  SUSPICIOUS
+  FAILED
+}
+
 model Ticket {
   id            String           @id @default(cuid())
   user          User             @relation(fields: [userId], references: [id])
@@ -102,8 +110,18 @@ model Ticket {
   updatedAt     DateTime         @updatedAt
   auditLogs     TicketAuditLog[]
 
+  verificationStatus    TicketVerificationStatus @default(PENDING)
+  verificationScore     Float?
+  verificationReason    String?                  @db.Text
+  aiDetectionScore      Float?
+  ocrExtractedText      String?                  @db.Text
+  metadataHash          String?
+  verificationCheckedAt DateTime?
+
   @@index([destination, departureDate])
   @@index([userId])
+  @@index([metadataHash])
+  @@index([verificationStatus])
 }
 
 model TicketAuditLog {
