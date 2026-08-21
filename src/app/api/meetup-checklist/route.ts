@@ -11,14 +11,14 @@ import { withValidation } from "@/lib/withValidation";
  * without a cap a single item could carry megabytes that both travellers then
  * download on every load.
  */
-export const MAX_CHECKLIST_TEXT_LENGTH = 200;
+const MAX_CHECKLIST_TEXT_LENGTH = 200;
 
 /**
  * Upper bound on items per plan. Nothing here is user-facing under normal use
  * — it exists so a script cannot grow one plan without limit, and so `GET`
  * has a number it can safely `take`.
  */
-export const MAX_CHECKLIST_ITEMS_PER_PLAN = 200;
+const MAX_CHECKLIST_ITEMS_PER_PLAN = 200;
 
 const checklistTextSchema = z
   .string({
