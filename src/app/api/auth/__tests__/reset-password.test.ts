@@ -14,6 +14,8 @@ vi.mock("@/lib/rate-limit-rules", () => ({
     allowed: true,
     limit: 5,
     remaining: 4,
+    resetAt: Math.floor(Date.now() / 1000) + 900,
+    retryAfter: 0,
     bypassed: false,
   }),
 }));
@@ -28,9 +30,9 @@ beforeEach(() => {
     allowed: true,
     limit: 5,
     remaining: 4,
+    resetAt: Math.floor(Date.now() / 1000) + 900,
+    retryAfter: 0,
     bypassed: false,
-    resetAt: 0,
-    retryAfter: 0
   });
 });
 
@@ -54,9 +56,9 @@ describe("POST /api/auth/reset-password", () => {
       allowed: false,
       limit: 5,
       remaining: 0,
+      resetAt: Math.floor(Date.now() / 1000) + 900,
+      retryAfter: 900,
       bypassed: false,
-      resetAt: 0,
-      retryAfter: 0
     });
 
     const req = createRequest({ token: "some-token", password: "newpassword123" });

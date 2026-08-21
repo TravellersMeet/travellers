@@ -83,8 +83,8 @@ describe("DELETE /api/user/account", () => {
     });
     vi.mocked(deleteUserAccount).mockResolvedValue({
       alreadyDeleted: false,
-      queuedAssets: 2,
       ticketsInvalidated: 0,
+      queuedAssets: 2,
       cleanup: {
         processed: 2,
         deleted: 1,

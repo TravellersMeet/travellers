@@ -89,14 +89,6 @@ model Report {
   @@index([reportedId])
 }
 
-enum TicketVerificationStatus {
-  PENDING
-  PROCESSING
-  PASSED
-  SUSPICIOUS
-  FAILED
-}
-
 model Ticket {
   id            String           @id @default(cuid())
   user          User             @relation(fields: [userId], references: [id])
@@ -106,22 +98,24 @@ model Ticket {
   ticketUrl     String
   status        TicketStatus     @default(PENDING)
   tripPurpose   String?
+
+  // Automated ticket verification
+  verificationStatus    TicketVerificationStatus @default(PENDING)
+  verificationScore     Float?
+  verificationReason    String? @db.Text
+  aiDetectionScore      Float?
+  ocrExtractedText      String? @db.Text
+  metadataHash          String?
+  verificationCheckedAt DateTime?
+
   createdAt     DateTime         @default(now())
   updatedAt     DateTime         @updatedAt
   auditLogs     TicketAuditLog[]
 
-  verificationStatus    TicketVerificationStatus @default(PENDING)
-  verificationScore     Float?
-  verificationReason    String?                  @db.Text
-  aiDetectionScore      Float?
-  ocrExtractedText      String?                  @db.Text
-  metadataHash          String?
-  verificationCheckedAt DateTime?
-
   @@index([destination, departureDate])
   @@index([userId])
-  @@index([metadataHash])
   @@index([verificationStatus])
+  @@index([metadataHash])
 }
 
 model TicketAuditLog {
@@ -172,6 +166,14 @@ enum TicketStatus {
   PENDING
   VERIFIED
   REJECTED
+}
+
+enum TicketVerificationStatus {
+  PENDING
+  PROCESSING
+  PASSED
+  SUSPICIOUS
+  FAILED
 }
 
 enum NotificationType {
