@@ -1,369 +1,163 @@
-import type { Prisma } from "@prisma/client";
-import { NotificationType, TicketStatus } from "@prisma/client";
-import type { NextRequest } from "next/server";
-import { z } from "zod";
+import { NextRequest } from "next/server";
 
-import {
-  API_ERROR_CODES,
-  logApiError,
-} from "@/lib/api-error";
+import { API_ERROR_CODES, logApiError } from "@/lib/api-error";
 import { apiError, apiJson } from "@/lib/api-response";
 import { auth } from "@/lib/auth";
-import { invalidateMatchCachesForTicket } from "@/lib/match-cache";
-import { createNotification } from "@/lib/notifications";
-import {
-  buildTimestampCursorWhere,
-  createPaginatedResponse,
-  PaginationError,
-  parsePaginationParams,
-} from "@/lib/pagination";
 import prisma from "@/lib/prisma";
 import { getRequestId } from "@/lib/request-id";
+import {
+  MAX_TICKET_FILE_SIZE,
+  verifyTicket,
+} from "@/lib/ticket-verification";
 
 interface RouteContext {
-  params: {
-    id: string;
-  };
+  params: { id: string };
 }
 
-const updateSchema = z.object({
-  status: z.enum(["VERIFIED", "REJECTED"]),
-  reason: z.string().optional(),
-});
+const verificationLocks = new Set<string>();
 
-export async function PATCH(
+export async function POST(
   request: NextRequest,
   { params }: RouteContext,
 ) {
   const requestId = getRequestId(request);
   const session = await auth();
 
-  if (!session?.user?.id) {
-    return apiError(
-      requestId,
-      API_ERROR_CODES.UNAUTHORIZED,
-      "Authentication is required",
-      401,
-    );
-  }
-
-  try {
-    const user = await prisma.user.findUnique({
-      where: { id: session.user.id },
-      select: { role: true },
-    });
-
-    if (user?.role !== "ADMIN") {
-      return apiError(
-        requestId,
-        API_ERROR_CODES.FORBIDDEN,
-        "Administrator access is required",
-        403,
-      );
-    }
-
-    let body: unknown;
-    try {
-      body = await request.json();
-    } catch {
-      return apiError(
-        requestId,
-        API_ERROR_CODES.VALIDATION_ERROR,
-        "The request data is invalid",
-        400,
-      );
-    }
-
-    const result = updateSchema.safeParse(body);
-    if (!result.success) {
-      return apiError(
-        requestId,
-        API_ERROR_CODES.VALIDATION_ERROR,
-        "The request data is invalid",
-        400,
-        {
-          status: ["Status must be VERIFIED or REJECTED"],
-        },
-      );
-    }
-
-    const { status, reason: rawReason } = result.data;
-    const reason = rawReason?.trim() ?? "";
-
-    if (status === "REJECTED" && !reason) {
-      return apiError(
-        requestId,
-        API_ERROR_CODES.VALIDATION_ERROR,
-        "A reason is required to reject a ticket",
-        400,
-        {
-          reason: ["A reason is required to reject a ticket"],
-        },
-      );
-    }
-
-    const transactionResult = await prisma.$transaction(async (tx) => {
-      const existing = await tx.ticket.findUnique({
-        where: { id: params.id },
-        select: {
-          id: true,
-          userId: true,
-          destination: true,
-          departureDate: true,
-          status: true,
-        },
-      });
-
-      if (!existing) {
-        return { notFound: true as const };
-      }
-
-      if (existing.status === status) {
-        const ticket = await tx.ticket.findUnique({
-          where: { id: params.id },
-          include: {
-            user: {
-              select: {
-                id: true,
-                name: true,
-                email: true,
-              },
-            },
-          },
-        });
-
-        return {
-          changed: false as const,
-          ticket,
-        };
-      }
-
-      const ticket = await tx.ticket.update({
-        where: { id: params.id },
-        data: { status },
-        include: {
-          user: {
-            select: {
-              id: true,
-              name: true,
-              email: true,
-            },
-          },
-        },
-      });
-
-      await tx.ticketAuditLog.create({
-        data: {
-          ticketId: params.id,
-          adminId: session.user.id,
-          previousStatus: existing.status,
-          newStatus: status,
-          reason: reason || null,
-          requestId,
-        },
-      });
-
-      return {
-        changed: true as const,
-        ticket,
-        previous: existing,
-      };
-    });
-
-    if ("notFound" in transactionResult) {
-      return apiError(
-        requestId,
-        API_ERROR_CODES.NOT_FOUND,
-        "Ticket not found",
-        404,
-      );
-    }
-
-    if (transactionResult.changed) {
-      try {
-        await invalidateMatchCachesForTicket(
-          {
-            destination: transactionResult.ticket.destination,
-            departureDate: transactionResult.ticket.departureDate,
-          },
-          {
-            destination: transactionResult.previous.destination,
-            departureDate: transactionResult.previous.departureDate,
-          },
-        );
-      } catch (cacheError) {
-        logApiError(
-          requestId,
-          "Match cache invalidation failed after ticket status change",
-          cacheError,
-        );
-      }
-
-      const verified = status === TicketStatus.VERIFIED;
-      await createNotification({
-        userId: transactionResult.ticket.user.id,
-        type: verified
-          ? NotificationType.TICKET_VERIFIED
-          : NotificationType.TICKET_REJECTED,
-        title: verified ? "Ticket verified" : "Ticket rejected",
-        content: verified
-          ? `Your ticket to ${transactionResult.ticket.destination} has been verified.`
-          : `Your ticket to ${transactionResult.ticket.destination} was rejected. ${reason}`,
-        link: verified ? "/dashboard" : "/upload",
-      });
-    }
-
-    return apiJson(
-      {
-        ok: true,
-        changed: transactionResult.changed,
-        ticket: transactionResult.ticket,
-      },
-      requestId,
-    );
-  } catch (error) {
-    logApiError(
-      requestId,
-      "Ticket status update failed",
-      error,
-    );
-
-    return apiError(
-      requestId,
-      API_ERROR_CODES.INTERNAL_ERROR,
-      "Unable to update ticket status",
-      500,
-    );
-  }
+if (!session?.user?.id) {
+  return apiError(
+    requestId,
+    API_ERROR_CODES.UNAUTHORIZED,
+    "Authentication is required",
+    401,
+  );
 }
 
-export async function GET(
-  request: NextRequest,
-  { params }: RouteContext,
-) {
-  const requestId = getRequestId(request);
-  const session = await auth();
+const adminId = session.user.id;
 
-  if (!session?.user?.id) {
-    return apiError(
-      requestId,
-      API_ERROR_CODES.UNAUTHORIZED,
-      "Authentication is required",
-      401,
-    );
+const adminId = session.user.id;
+
+
+  const user = await prisma.user.findUnique({
+    where: { id: session.user.id },
+    select: { role: true },
+  });
+
+  if (user?.role !== "ADMIN") {
+    return apiError(requestId, API_ERROR_CODES.FORBIDDEN, "Administrator access is required", 403);
   }
 
+  if (verificationLocks.has(params.id)) {
+    return apiError(requestId, API_ERROR_CODES.CONFLICT, "Ticket verification is already in progress", 409);
+  }
+
+  verificationLocks.add(params.id);
+
   try {
-    const user = await prisma.user.findUnique({
-      where: {
-        id: session.user.id,
-      },
-      select: {
-        role: true,
-      },
-    });
-
-    if (user?.role !== "ADMIN") {
-      return apiError(
-        requestId,
-        API_ERROR_CODES.FORBIDDEN,
-        "Administrator access is required",
-        403,
-      );
-    }
-
     const ticket = await prisma.ticket.findUnique({
-      where: {
-        id: params.id,
-      },
+      where: { id: params.id },
       select: {
         id: true,
+        destination: true,
+        departureDate: true,
+        ticketUrl: true,
+        verificationStatus: true,
+        metadataHash: true,
       },
     });
 
     if (!ticket) {
-      return apiError(
-        requestId,
-        API_ERROR_CODES.NOT_FOUND,
-        "Ticket not found",
-        404,
-      );
+      return apiError(requestId, API_ERROR_CODES.NOT_FOUND, "Ticket not found", 404);
     }
 
-    const { limit, cursor } =
-      parsePaginationParams(
-        request.nextUrl.searchParams,
-      );
-    const cursorWhere =
-      buildTimestampCursorWhere(
-        "createdAt",
-        cursor,
-      );
+    await prisma.ticket.update({
+      where: { id: params.id },
+      data: { verificationStatus: "PROCESSING" },
+    });
 
-    const where: Prisma.TicketAuditLogWhereInput = {
-      ticketId: params.id,
-      ...(cursorWhere ?? {}),
-    };
+    const asset = await fetch(ticket.ticketUrl);
+    if (!asset.ok) throw new Error("Unable to retrieve ticket asset");
 
-    const records =
-      await prisma.ticketAuditLog.findMany({
-        where,
-        orderBy: [
-          {
-            createdAt: "desc",
-          },
-          {
-            id: "desc",
-          },
-        ],
-        take: limit + 1,
-        include: {
-          admin: {
-            select: {
-              id: true,
-              name: true,
-              email: true,
-            },
-          },
+    const contentType =
+      asset.headers.get("content-type")?.split(";")[0].trim() ?? "application/octet-stream";
+    const bytes = Buffer.from(await asset.arrayBuffer());
+
+    if (bytes.length > MAX_TICKET_FILE_SIZE) {
+      throw new Error("Ticket asset exceeds the maximum supported size");
+    }
+
+    const result = await verifyTicket({
+      bytes,
+      mimeType: contentType,
+      destination: ticket.destination,
+      departureDate: ticket.departureDate,
+    });
+
+    const duplicate = await prisma.ticket.findFirst({
+      where: {
+        metadataHash: result.metadataHash,
+        NOT: { id: params.id },
+      },
+      select: { id: true },
+    });
+
+    const verificationStatus = duplicate
+      ? "SUSPICIOUS"
+      : result.status;
+    const verificationScore = duplicate
+      ? Math.min(result.score, 0.49)
+      : result.score;
+    const verificationReason = duplicate
+      ? `${result.reason}; duplicate ticket content detected`
+      : result.reason;
+
+    const updated = await prisma.ticket.update({
+      where: { id: params.id },
+      data: {
+        verificationStatus,
+        verificationScore,
+        verificationReason,
+        aiDetectionScore: result.aiDetectionScore,
+        ocrExtractedText: result.ocrExtractedText,
+        metadataHash: result.metadataHash,
+        verificationCheckedAt: new Date(),
+      },
+      select: {
+        id: true,
+        status: true,
+        verificationStatus: true,
+        verificationScore: true,
+        verificationReason: true,
+        aiDetectionScore: true,
+        ocrExtractedText: true,
+        metadataHash: true,
+        verificationCheckedAt: true,
+      },
+    });
+
+    return apiJson({ ticket: updated }, requestId);
+  } catch (error) {
+    logApiError(requestId, "Automated ticket verification failed", error);
+
+    try {
+      await prisma.ticket.update({
+        where: { id: params.id },
+        data: {
+          verificationStatus: "FAILED",
+          verificationReason: "Automated verification could not be completed",
+          verificationCheckedAt: new Date(),
         },
       });
-
-    return apiJson(
-      createPaginatedResponse(
-        records,
-        limit,
-        "createdAt",
-      ),
-      requestId,
-      {
-        status: 200,
-        headers: {
-          "Cache-Control": "no-store",
-        },
-      },
-    );
-  } catch (error) {
-    if (error instanceof PaginationError) {
-      return apiError(
-        requestId,
-        API_ERROR_CODES.VALIDATION_ERROR,
-        error.message,
-        400,
-      );
+    } catch (updateError) {
+      logApiError(requestId, "Failed to persist ticket verification failure", updateError);
     }
-
-    logApiError(
-      requestId,
-      "Ticket audit history retrieval failed",
-      error,
-    );
 
     return apiError(
       requestId,
       API_ERROR_CODES.INTERNAL_ERROR,
-      "Unable to retrieve ticket history",
+      "Unable to complete ticket verification",
       500,
     );
+  } finally {
+    verificationLocks.delete(params.id);
   }
 }
-
