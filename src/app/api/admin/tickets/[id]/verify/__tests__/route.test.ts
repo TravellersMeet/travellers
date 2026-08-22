@@ -62,7 +62,7 @@ describe("POST /api/admin/tickets/[id]/verify", () => {
   });
 
   it("requires authentication", async () => {
-    vi.mocked(auth).mockResolvedValue(null);
+    vi.mocked(auth).mockResolvedValue(null as unknown as Awaited<ReturnType<typeof auth>>,);
     expect((await POST(request(), { params: { id: "ticket-1" } })).status).toBe(401);
   });
 
