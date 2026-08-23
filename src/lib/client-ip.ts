@@ -36,17 +36,9 @@ function normalizeIp(value: string | null | undefined): string | null {
  * Raw header values are never used directly as Redis keys.
  */
 export function getClientIp(request: NextRequest): string {
-  const forwardedFor = request.headers.get("x-forwarded-for");
-
-  if (forwardedFor) {
-    for (const value of forwardedFor.split(",")) {
-      const parsed = normalizeIp(value);
-      if (parsed) {
-        return parsed;
-      }
-    }
-  }
-
+  // Prefer platform-set headers first: a CDN/proxy (Vercel, Cloudflare, Fly)
+  // overwrites these, so — unlike the client-supplied X-Forwarded-For — they
+  // can't be spoofed by the caller.
   const platformHeaders = [
     request.headers.get("x-real-ip"),
     request.headers.get("cf-connecting-ip"),
@@ -57,6 +49,22 @@ export function getClientIp(request: NextRequest): string {
     const parsed = normalizeIp(value);
     if (parsed) {
       return parsed;
+    }
+  }
+
+  // Fall back to X-Forwarded-For, taking the RIGHTMOST valid entry — the hop
+  // closest to the server. The leftmost entry is the attacker-controllable end
+  // of the chain; keying rate limits on it let a caller rotate it per request
+  // and never trip the limit.
+  const forwardedFor = request.headers.get("x-forwarded-for");
+
+  if (forwardedFor) {
+    const parts = forwardedFor.split(",");
+    for (let i = parts.length - 1; i >= 0; i -= 1) {
+      const parsed = normalizeIp(parts[i]);
+      if (parsed) {
+        return parsed;
+      }
     }
   }
 
