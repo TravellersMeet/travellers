@@ -159,9 +159,7 @@ describe("cache invalidation", () => {
       "2026-08-15",
     )) {
       await expect(
-        getMatchCacheVersion(
-          "goa",
-          date,
+        getMatchCacheVersion(date,
           store,
         ),
       ).resolves.toBe(1);
@@ -200,6 +198,32 @@ describe("cache invalidation", () => {
     expect(after).not.toBe(before);
   });
 
+  it("invalidates substring-destination searches after a superstring ticket is verified (#409)", async () => {
+    const store = new MemoryStore();
+
+    // A user searches for "Paris" (matched by substring against ticket destinations).
+    const searchInput = {
+      destination: "Paris",
+      date: "2026-08-15",
+      userId: "search-user",
+    };
+    const before = await buildMatchCacheKey(searchInput, store);
+    expect(before).toContain(":v0");
+
+    // A ticket to "Paris, France" (same date) is verified — it satisfies the
+    // "Paris" substring search, so that search's cache must be invalidated even
+    // though the ticket's full destination differs from the query.
+    await invalidateMatchCachesForTicket(
+      { destination: "Paris, France", departureDate: "2026-08-15" },
+      null,
+      store,
+    );
+
+    const after = await buildMatchCacheKey(searchInput, store);
+    expect(after).toContain(":v1");
+    expect(after).not.toBe(before);
+  });
+
   it("invalidates old and new windows after destination or date changes", async () => {
     const store = new MemoryStore();
 
@@ -216,16 +240,12 @@ describe("cache invalidation", () => {
     );
 
     await expect(
-      getMatchCacheVersion(
-        "Goa",
-        "2026-08-15",
+      getMatchCacheVersion("2026-08-15",
         store,
       ),
     ).resolves.toBe(1);
     await expect(
-      getMatchCacheVersion(
-        "Mumbai",
-        "2026-09-10",
+      getMatchCacheVersion("2026-09-10",
         store,
       ),
     ).resolves.toBe(1);
@@ -259,9 +279,7 @@ describe("cache invalidation", () => {
       .mockImplementation(() => undefined);
 
     await expect(
-      getMatchCacheVersion(
-        "Goa",
-        "2026-08-15",
+      getMatchCacheVersion("2026-08-15",
         broken,
       ),
     ).resolves.toBe(0);
