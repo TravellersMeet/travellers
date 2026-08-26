@@ -9,6 +9,11 @@ vi.mock("@/lib/prisma", () => ({
   default: { user: { findUnique: vi.fn(), update: vi.fn() } },
 }));
 vi.mock("@/lib/auth", () => ({ auth: vi.fn() }));
+vi.mock("@/lib/rate-limit-rules", () => ({
+  enforceRateLimit: vi.fn().mockResolvedValue({
+    allowed: true, limit: 10, remaining: 9, resetAt: 0, retryAfter: 0,
+  }),
+}));
 
 interface MockNextRequest { json: () => Promise<any>; }
 function makeJsonRequest(body: any): MockNextRequest {
@@ -16,7 +21,12 @@ function makeJsonRequest(body: any): MockNextRequest {
 }
 
 describe("Traveler Profiles & Onboarding Flow API Endpoints", () => {
-  beforeEach(() => { vi.clearAllMocks(); });
+  beforeEach(() => {
+    vi.clearAllMocks();
+    // Onboarding now refuses to write to a soft-deleted account, so the
+    // lookup has to resolve to a live row before the update is attempted.
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({ isDeleted: false } as any);
+  });
 
   describe("POST /api/user/onboard", () => {
     it("completes onboarding with rich profile details", async () => {
@@ -27,7 +37,14 @@ describe("Traveler Profiles & Onboarding Flow API Endpoints", () => {
       const data = await res.json();
       expect(res.status).toBe(200);
       expect(data.success).toBe(true);
-      expect(prisma.user.update).toHaveBeenCalledWith({ where: { id: "user-1" }, data: { onboarded: true, name: "Alice", bio: "Travel lover", location: "Berlin", homeLocation: "Munich", languages: ["German", "English"], travelInterests: ["Nature", "Food"], accommodationPrefs: ["Hostels"], budgetRange: "Economy", socialLinks: ["https://instagram.com/alice"] } });
+      expect(prisma.user.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: "user-1" },
+          // Only the keys the client sent are written; absent fields are left
+          // out entirely rather than being sent to Prisma as undefined.
+          data: { onboarded: true, name: "Alice", bio: "Travel lover", location: "Berlin", homeLocation: "Munich", languages: ["German", "English"], travelInterests: ["Nature", "Food"], accommodationPrefs: ["Hostels"], budgetRange: "Economy", socialLinks: ["https://instagram.com/alice"] },
+        }),
+      );
     });
   });
 

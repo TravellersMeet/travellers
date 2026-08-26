@@ -74,6 +74,12 @@ export const RATE_LIMIT_RULES = {
     limit: 20,
     windowSeconds: 60,
   },
+  /** Onboarding submissions — each one is an unbounded profile write. */
+  userOnboard: {
+    namespace: "user:onboard",
+    limit: 10,
+    windowSeconds: 10 * 60,
+  },
   /** User reports. */
   userReport: {
     namespace: "user:report",
