@@ -4,10 +4,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { auth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import {
-  GET,
   HEATMAP_MAX_FEATURES,
   HEATMAP_TICKET_LIMIT,
-} from "../route";
+} from "../constants";
+import { GET } from "../route";
 
 vi.mock("@/lib/prisma", () => ({
   default: {

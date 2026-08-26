@@ -7,16 +7,10 @@ import {
 } from "@/lib/geocode-destination";
 import prisma from "@/lib/prisma";
 
-/**
- * Upper bound on how many verified tickets are read for one heatmap. The
- * previous implementation had no `take` at all, so the query grew with the
- * platform. Tickets are read newest-first, so the cap trims the far future
- * rather than the trips people are actually about to take.
- */
-export const HEATMAP_TICKET_LIMIT = 5_000;
-
-/** Hotspots returned to the client, heaviest first. */
-export const HEATMAP_MAX_FEATURES = 250;
+import {
+  HEATMAP_MAX_FEATURES,
+  HEATMAP_TICKET_LIMIT,
+} from "./constants";
 
 interface HeatmapFeature {
   type: "Feature";
