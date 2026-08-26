@@ -4,7 +4,6 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { z } from "zod";
 
 import { auth } from "@/lib/auth";
 import {
@@ -14,38 +13,16 @@ import {
   parsePaginationParams,
 } from "@/lib/pagination";
 import prisma from "@/lib/prisma";
+import {
+  applyRateLimitHeaders,
+  rateLimitExceededResponse,
+} from "@/lib/rate-limit";
+import { enforceRateLimit } from "@/lib/rate-limit-rules";
+import {
+  ROUTE_LIMITS,
+  routePayloadSchema,
+} from "@/lib/validation/route-payload";
 import { withValidation } from "@/lib/withValidation";
-
-const RouteSchema = z.object({
-  id: z.string().optional(),
-  origin: z.object({
-    lat: z.number(),
-    lng: z.number(),
-  }),
-  destination: z.object({
-    lat: z.number(),
-    lng: z.number(),
-  }),
-  waypoints: z
-    .array(
-      z.object({
-        location: z.object({
-          lat: z.number(),
-          lng: z.number(),
-        }),
-        stopover: z.boolean(),
-        name: z.string().optional(),
-      }),
-    )
-    .optional(),
-  originName: z.string().optional(),
-  destinationName: z.string().optional(),
-  distance: z.number(),
-  duration: z.number(),
-  encodedPolyline: z.string(),
-  tripName: z.string().optional(),
-  notes: z.string().optional(),
-});
 
 /**
  * GET /api/routes - Get paginated routes for authenticated user
@@ -112,8 +89,8 @@ export async function GET(request: NextRequest) {
  * POST /api/routes - Create or update a route
  */
 export const POST = withValidation(
-  RouteSchema,
-  async (_request, validatedData) => {
+  routePayloadSchema,
+  async (request, validatedData) => {
     try {
       const session = await auth();
 
@@ -124,12 +101,44 @@ export const POST = withValidation(
         );
       }
 
+      const userId = session.user.id;
+
+      const rateLimit = await enforceRateLimit(
+        request,
+        "routeWrite",
+        userId,
+      );
+
+      if (!rateLimit.allowed) {
+        return rateLimitExceededResponse(rateLimit);
+      }
+
+      // Shared by the create and update paths so a route reads back exactly
+      // as it was written on either.
+      const routeData = {
+        originLat: validatedData.origin.lat,
+        originLng: validatedData.origin.lng,
+        destinationLat: validatedData.destination.lat,
+        destinationLng: validatedData.destination.lng,
+        originName: validatedData.originName,
+        destinationName: validatedData.destinationName,
+        distance: validatedData.distance,
+        duration: validatedData.duration,
+        encodedPolyline: validatedData.encodedPolyline,
+        tripName: validatedData.tripName,
+        notes: validatedData.notes,
+        waypoints: validatedData.waypoints
+          ? JSON.stringify(validatedData.waypoints)
+          : null,
+      };
+
       if (validatedData.id) {
         const existing = await prisma.route.findFirst({
           where: {
             id: validatedData.id,
-            userId: session.user.id,
+            userId,
           },
+          select: { id: true },
         });
 
         if (!existing) {
@@ -143,58 +152,41 @@ export const POST = withValidation(
           where: {
             id: validatedData.id,
           },
-          data: {
-            originLat: validatedData.origin.lat,
-            originLng: validatedData.origin.lng,
-            destinationLat:
-              validatedData.destination.lat,
-            destinationLng:
-              validatedData.destination.lng,
-            originName: validatedData.originName,
-            destinationName:
-              validatedData.destinationName,
-            distance: validatedData.distance,
-            duration: validatedData.duration,
-            encodedPolyline:
-              validatedData.encodedPolyline,
-            tripName: validatedData.tripName,
-            notes: validatedData.notes,
-            waypoints: validatedData.waypoints
-              ? JSON.stringify(validatedData.waypoints)
-              : null,
-          },
+          data: routeData,
         });
 
-        return NextResponse.json(route);
+        return applyRateLimitHeaders(
+          NextResponse.json(route),
+          rateLimit,
+        ) as NextResponse;
+      }
+
+      // Only creates are capped — an update replaces a row rather than adding
+      // one, so it stays available even at the ceiling.
+      const savedRoutes = await prisma.route.count({
+        where: { userId },
+      });
+
+      if (savedRoutes >= ROUTE_LIMITS.routesPerUser) {
+        return NextResponse.json(
+          {
+            error: `You can save at most ${ROUTE_LIMITS.routesPerUser} routes. Delete one to make room.`,
+          },
+          { status: 409 },
+        );
       }
 
       const route = await prisma.route.create({
         data: {
-          userId: session.user.id,
-          originLat: validatedData.origin.lat,
-          originLng: validatedData.origin.lng,
-          destinationLat:
-            validatedData.destination.lat,
-          destinationLng:
-            validatedData.destination.lng,
-          originName: validatedData.originName,
-          destinationName:
-            validatedData.destinationName,
-          distance: validatedData.distance,
-          duration: validatedData.duration,
-          encodedPolyline:
-            validatedData.encodedPolyline,
-          tripName: validatedData.tripName,
-          notes: validatedData.notes,
-          waypoints: validatedData.waypoints
-            ? JSON.stringify(validatedData.waypoints)
-            : null,
+          userId,
+          ...routeData,
         },
       });
 
-      return NextResponse.json(route, {
-        status: 201,
-      });
+      return applyRateLimitHeaders(
+        NextResponse.json(route, { status: 201 }),
+        rateLimit,
+      ) as NextResponse;
     } catch (error) {
       console.error("Error saving route:", error);
       return NextResponse.json(
