@@ -5,9 +5,21 @@ import Map, { Source, Layer } from "@vis.gl/react-maplibre";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { Loader2 } from "lucide-react";
 
+interface HeatmapCollection {
+  type: "FeatureCollection";
+  features: Array<{
+    type: "Feature";
+    geometry: { type: "Point"; coordinates: [number, number] };
+    properties: { id: string; name: string; weight: number };
+  }>;
+  meta?: { maxWeight: number; totalDestinations: number };
+}
+
 export default function TravelHeatmap() {
-  const [data, setData] = useState<any>(null);
+  const [data, setData] = useState<HeatmapCollection | null>(null);
   const [loading, setLoading] = useState(true);
+
+  const maxWeight = data?.meta?.maxWeight ?? 1;
 
   useEffect(() => {
     async function fetchHeatmap() {
@@ -58,8 +70,16 @@ export default function TravelHeatmap() {
             id="heatmap-layer"
             type="heatmap"
             paint={{
-              // Increase weight as zoom increases
-              "heatmap-weight": 1,
+              // Scale each point by how many tickets are actually headed
+              // there. maxWeight comes from the API so a single busy city
+              // does not flatten the rest of the ramp.
+              "heatmap-weight": [
+                "interpolate",
+                ["linear"],
+                ["get", "weight"],
+                0, 0,
+                Math.max(1, maxWeight), 1
+              ],
               // Increase the heatmap color weight weight by zoom level
               "heatmap-intensity": [
                 "interpolate",
