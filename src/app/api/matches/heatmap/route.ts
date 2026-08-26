@@ -1,66 +1,129 @@
-import prisma from "@/lib/prisma";
-import { auth } from "@/lib/auth";
 import { NextRequest, NextResponse } from "next/server";
 
-export async function GET(req: NextRequest) {
+import { auth } from "@/lib/auth";
+import {
+  aggregateDestinations,
+  type DestinationBucket,
+} from "@/lib/geocode-destination";
+import prisma from "@/lib/prisma";
+
+/**
+ * Upper bound on how many verified tickets are read for one heatmap. The
+ * previous implementation had no `take` at all, so the query grew with the
+ * platform. Tickets are read newest-first, so the cap trims the far future
+ * rather than the trips people are actually about to take.
+ */
+export const HEATMAP_TICKET_LIMIT = 5_000;
+
+/** Hotspots returned to the client, heaviest first. */
+export const HEATMAP_MAX_FEATURES = 250;
+
+interface HeatmapFeature {
+  type: "Feature";
+  geometry: {
+    type: "Point";
+    coordinates: [number, number];
+  };
+  properties: {
+    id: string;
+    name: string;
+    city: string;
+    country: string;
+    region: string;
+    /** Verified upcoming tickets for this destination. */
+    weight: number;
+  };
+}
+
+function toFeature(bucket: DestinationBucket): HeatmapFeature {
+  return {
+    type: "Feature",
+    geometry: {
+      type: "Point",
+      // GeoJSON is [longitude, latitude], in that order.
+      coordinates: [
+        bucket.coordinates.lng,
+        bucket.coordinates.lat,
+      ],
+    },
+    properties: {
+      id: bucket.id,
+      name: bucket.name,
+      city: bucket.city,
+      country: bucket.country,
+      region: bucket.region,
+      weight: bucket.count,
+    },
+  };
+}
+
+/**
+ * GET /api/matches/heatmap
+ *
+ * Returns one GeoJSON point per real destination, weighted by how many
+ * verified upcoming tickets are headed there. Destinations that are not in the
+ * bundled gazetteer are counted and reported rather than being placed at an
+ * invented coordinate.
+ */
+export async function GET(_req: NextRequest) {
   const session = await auth();
+
   if (!session?.user?.id) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json(
+      { error: "Unauthorized" },
+      { status: 401 },
+    );
   }
 
   try {
-    // Fetch all VERIFIED ticket destinations that are coming up
     const tickets = await prisma.ticket.findMany({
       where: {
         status: "VERIFIED",
-        departureDate: {
-          gte: new Date(),
-        },
+        departureDate: { gte: new Date() },
       },
-      select: {
-        destination: true,
-      },
+      select: { destination: true },
+      orderBy: { departureDate: "asc" },
+      take: HEATMAP_TICKET_LIMIT,
     });
 
-    // In a real app with Mapbox/Google APIs, we would geocode these on the fly 
-    // or store lat/lng directly in the ticket. Since the schema only has 'destination' string,
-    // we will simulate some generic coordinates for popular destinations or return raw strings
-    // to be mapped on the client. For this MapLibre Heatmap implementation to work instantly, 
-    // we'll return a simulated GeoJSON FeatureCollection of random offsets around major cities
-    // based on string hashing, or simply pass the string and let the client handle it.
-    
-    // For the sake of the WOW factor PR, we'll generate some realistic looking GeoJSON
-    // based on the verified tickets.
-    const features = tickets.map((t, i) => {
-      // Very simple determinisitic pseudo-random coordinate generation for demo purposes
-      // based on the string length to give varying hotspots
-      const hash = t.destination.length + i;
-      const lat = 35 + (hash % 15) * (hash % 2 === 0 ? 1 : -1);
-      const lng = -10 + (hash % 25) * (hash % 3 === 0 ? 1 : -1);
-      
-      return {
-        type: "Feature",
-        geometry: {
-          type: "Point",
-          coordinates: [lng, lat],
-        },
-        properties: {
-          weight: 1,
-        },
-      };
-    });
+    const aggregate = aggregateDestinations(
+      tickets.map((ticket) => ticket.destination),
+    );
 
-    const geojson = {
+    const features = aggregate.buckets
+      .slice(0, HEATMAP_MAX_FEATURES)
+      .map(toFeature);
+
+    const maxWeight = features.reduce(
+      (highest, feature) =>
+        Math.max(highest, feature.properties.weight),
+      0,
+    );
+
+    return NextResponse.json({
       type: "FeatureCollection",
       features,
-    };
-
-    return NextResponse.json(geojson);
+      // The client scales the heat ramp against maxWeight, and surfacing the
+      // unresolved count keeps gazetteer gaps visible instead of silently
+      // dropping traffic off the map.
+      meta: {
+        sampledTickets: tickets.length,
+        resolvedTickets: aggregate.resolvedCount,
+        unresolvedTickets:
+          tickets.length - aggregate.resolvedCount,
+        unresolvedDestinations: aggregate.unresolvedCount,
+        totalDestinations: aggregate.buckets.length,
+        maxWeight,
+        truncated:
+          aggregate.buckets.length > HEATMAP_MAX_FEATURES,
+      },
+    });
   } catch (error) {
     console.error("Heatmap API error:", error);
+
     return NextResponse.json(
       { error: "Server error" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
