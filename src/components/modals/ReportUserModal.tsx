@@ -2,6 +2,12 @@
 
 import { AlertCircle, Loader2 } from "lucide-react";
 
+import {
+  MAX_REPORT_DETAILS_LENGTH,
+  REPORT_REASON_CODES,
+  reportReasonLabel,
+} from "@/lib/report-reasons";
+
 interface ReportUserModalProps {
   isOpen: boolean;
   userName: string;
@@ -42,29 +48,41 @@ export default function ReportUserModal({
               <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
                 Reason
               </label>
+              {/*
+                The option values are the codes the API stores, not the labels
+                shown here. Posting the display strings is what left the
+                moderation queue ungroupable, and it meant rewording an option
+                silently created a new category.
+              */}
               <select
                 value={reason}
                 onChange={(e) => setReason(e.target.value)}
                 className="w-full rounded-xl bg-gray-50 dark:bg-[#1A1C3D] border border-gray-100 dark:border-gray-800 px-3 py-2.5 text-sm text-gray-800 dark:text-white outline-none focus:ring-1 focus:ring-amber-500"
               >
-                <option value="Inappropriate behavior">Inappropriate behavior</option>
-                <option value="Spam or scams">Spam or scams</option>
-                <option value="Fake profile">Fake profile / Impersonation</option>
-                <option value="Harassment">Harassment or abusive language</option>
-                <option value="Other">Other</option>
+                {REPORT_REASON_CODES.map((code) => (
+                  <option key={code} value={code}>
+                    {reportReasonLabel(code)}
+                  </option>
+                ))}
               </select>
             </div>
             <div>
               <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                Details (Optional)
+                Details (optional)
               </label>
               <textarea
                 rows={3}
                 value={details}
                 onChange={(e) => setDetails(e.target.value)}
+                maxLength={MAX_REPORT_DETAILS_LENGTH}
                 placeholder="Provide additional details to help our moderation team..."
                 className="w-full rounded-xl bg-gray-50 dark:bg-[#1A1C3D] border border-gray-100 dark:border-gray-800 px-3 py-2.5 text-sm text-gray-800 dark:text-white outline-none focus:ring-1 focus:ring-amber-500 resize-none"
               />
+              {/* Mirrors the server cap so the limit is visible before submit
+                  rather than arriving as a 400. */}
+              <p className="mt-1 text-right text-[11px] text-slate-500 dark:text-slate-400">
+                {details.length}/{MAX_REPORT_DETAILS_LENGTH}
+              </p>
             </div>
           </div>
           <div className="flex gap-3 mt-6">
