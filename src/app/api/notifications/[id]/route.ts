@@ -1,10 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { deleteNotification } from "@/lib/notifications";
-import prisma from "@/lib/prisma";
+import {
+  deleteNotification,
+  markNotificationAsRead,
+} from "@/lib/notifications";
 
+/**
+ * PATCH /api/notifications/[id]
+ *
+ * Mark one notification as read.
+ *
+ * This is the canonical handler; /api/notifications/[id]/read re-exports it
+ * so the two endpoints cannot drift again. They were separate copies of the
+ * same `findFirst`-then-`update` pair returning two different body shapes
+ * (`{ ok, notification }` and `{ success }`), and the bell called both.
+ */
 export async function PATCH(
-  req: NextRequest,
+  _req: NextRequest,
   { params }: { params: { id: string } }
 ) {
   const session = await auth();
@@ -17,12 +29,10 @@ export async function PATCH(
   }
 
   try {
-    const notification = await prisma.notification.findFirst({
-      where: {
-        id: params.id,
-        userId: session.user.id,
-      },
-    });
+    const notification = await markNotificationAsRead(
+      params.id,
+      session.user.id
+    );
 
     if (!notification) {
       return NextResponse.json(
@@ -31,18 +41,12 @@ export async function PATCH(
       );
     }
 
-    const updated = await prisma.notification.update({
-      where: {
-        id: params.id,
-      },
-      data: {
-        read: true,
-      },
-    });
-
     return NextResponse.json({
       ok: true,
-      notification: updated,
+      // Retained so a client reading either of the two previous shapes keeps
+      // working.
+      success: true,
+      notification,
     });
   } catch (error) {
     console.error("Notification update error:", error);
