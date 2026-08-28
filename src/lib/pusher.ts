@@ -23,6 +23,31 @@ if (!isConfigured) {
   );
 }
 
+/**
+ * Whether the credential-free mock authorisation response is permitted.
+ *
+ * It exists so the test suite and a bare `npm run dev` can exercise the
+ * subscribe path without Pusher credentials. It must never be reachable in a
+ * deployed environment: a production box that loses `PUSHER_SECRET` would
+ * otherwise answer every subscribe with `200` and a signature Pusher rejects,
+ * so realtime silently stops working while the client believes it authorised.
+ *
+ * `PUSHER_ALLOW_MOCK_AUTH=true` is the explicit opt-in for a staging box that
+ * genuinely wants the mock.
+ */
+export function isMockAuthAllowed(
+  env: NodeJS.ProcessEnv = process.env,
+): boolean {
+  if (env.PUSHER_ALLOW_MOCK_AUTH === "true") {
+    return true;
+  }
+
+  return (
+    env.NODE_ENV === "test" ||
+    env.NODE_ENV === "development"
+  );
+}
+
 export async function triggerPusher(channel: string, event: string, data: any) {
   if (pusherServer) {
     try {

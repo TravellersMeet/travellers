@@ -74,6 +74,18 @@ export const RATE_LIMIT_RULES = {
     limit: 20,
     windowSeconds: 60,
   },
+  /**
+   * Realtime channel authorisation.
+   *
+   * Every call runs at least one query, and a client reconnecting normally
+   * authorises a handful of channels rather than hundreds — so this is set
+   * well above honest usage and well below what a scan would need.
+   */
+  pusherAuth: {
+    namespace: "pusher:auth",
+    limit: 60,
+    windowSeconds: 60,
+  },
   /** User reports. */
   userReport: {
     namespace: "user:report",
