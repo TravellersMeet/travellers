@@ -13,6 +13,106 @@ export interface CalendarRoute {
 const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const TIME_PATTERN = /^\d{2}:\d{2}$/;
 
+/** RFC 5545 3.1: a content line must not exceed 75 octets, excluding CRLF. */
+const MAX_LINE_OCTETS = 75;
+
+/**
+ * Control characters are not valid inside an iCalendar TEXT value. CR and LF
+ * are handled separately by `escapeCalendarText`, which turns them into the
+ * literal `\n` escape before this strips what is left.
+ */
+const CONTROL_CHARACTERS =
+  // eslint-disable-next-line no-control-regex
+  /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g;
+
+/**
+ * How long a timed event runs when the caller gives no duration. RFC 5545
+ * treats a DATE-TIME DTSTART with no DTEND as a zero-length instant, which
+ * Google Calendar renders as an easily missed 0-minute entry.
+ */
+export const DEFAULT_EVENT_DURATION_MINUTES = 60;
+
+/**
+ * UTF-8 length of a single code point.
+ *
+ * Deliberately computed rather than measured with `Buffer.byteLength`:
+ * `downloadCalendarEvent` runs in the browser, where `Buffer` does not exist.
+ */
+function octetLength(codePoint: number): number {
+  if (codePoint <= 0x7f) {
+    return 1;
+  }
+
+  if (codePoint <= 0x07ff) {
+    return 2;
+  }
+
+  if (codePoint <= 0xffff) {
+    return 3;
+  }
+
+  return 4;
+}
+
+export function measureOctets(value: string): number {
+  let total = 0;
+
+  for (const character of value) {
+    total += octetLength(character.codePointAt(0) ?? 0);
+  }
+
+  return total;
+}
+
+/**
+ * Folds one content line to the 75-octet limit, continuing with CRLF plus a
+ * single space.
+ *
+ * Iteration is over code points, not UTF-16 units, so a surrogate pair is
+ * never split across the boundary — and the budget is measured in octets,
+ * because destinations like "Kraków" and "東京" cost more than one byte per
+ * character and a character-based fold would still overflow.
+ */
+export function foldCalendarLine(line: string): string {
+  if (measureOctets(line) <= MAX_LINE_OCTETS) {
+    return line;
+  }
+
+  const segments: string[] = [];
+  let current = "";
+  let currentOctets = 0;
+  let budget = MAX_LINE_OCTETS;
+
+  for (const character of line) {
+    const size = octetLength(character.codePointAt(0) ?? 0);
+
+    if (currentOctets + size > budget) {
+      segments.push(current);
+      current = "";
+      currentOctets = 0;
+      // The leading space on a continuation line counts toward the limit.
+      budget = MAX_LINE_OCTETS - 1;
+    }
+
+    current += character;
+    currentOctets += size;
+  }
+
+  if (current) {
+    segments.push(current);
+  }
+
+  return segments.join("\r\n ");
+}
+
+/**
+ * Reverses folding. Used by the tests to assert on logical property lines,
+ * and useful to anyone parsing a file this module produced.
+ */
+export function unfoldCalendar(content: string): string {
+  return content.replace(/\r\n[ \t]/g, "");
+}
+
 function pad(value: number): string {
   return String(value).padStart(2, "0");
 }
@@ -21,6 +121,7 @@ export function escapeCalendarText(value: string): string {
   return value
     .replace(/\\/g, "\\\\")
     .replace(/\r\n|\r|\n/g, "\\n")
+    .replace(CONTROL_CHARACTERS, "")
     .replace(/,/g, "\\,")
     .replace(/;/g, "\\;");
 }
@@ -74,6 +175,40 @@ export function formatLocalDateTime(
   }
 
   return `${formattedDate}T${pad(hours)}${pad(minutes)}00`;
+}
+
+/**
+ * Advances a floating local DATE-TIME by a number of minutes.
+ *
+ * The arithmetic runs through `Date.UTC` purely to get correct calendar
+ * rollover (month ends, leap years). The result is formatted back as a
+ * floating local time to match DTSTART, so no timezone is introduced.
+ */
+export function addMinutesToLocalDateTime(
+  date: string,
+  time: string,
+  minutes: number,
+): string {
+  // Validates both inputs and throws on anything malformed.
+  formatLocalDateTime(date, time);
+
+  const [year, month, day] = date.split("-").map(Number);
+  const [hours, mins] = time.split(":").map(Number);
+
+  const shifted = new Date(
+    Date.UTC(year, month - 1, day, hours, mins, 0) +
+      minutes * 60_000,
+  );
+
+  return [
+    shifted.getUTCFullYear(),
+    pad(shifted.getUTCMonth() + 1),
+    pad(shifted.getUTCDate()),
+    "T",
+    pad(shifted.getUTCHours()),
+    pad(shifted.getUTCMinutes()),
+    "00",
+  ].join("");
 }
 
 export function createStableEventUid(routeId: string): string {
@@ -140,37 +275,22 @@ export function createCalendarEvent(
       )}`,
     );
 
-    if (
+    // A DATE-TIME DTSTART with no DTEND is a zero-length instant per RFC 5545
+    // 3.6.1, so fall back to a default rather than emitting nothing.
+    const durationMinutes =
       typeof route.durationMinutes === "number" &&
       Number.isFinite(route.durationMinutes) &&
       route.durationMinutes > 0
-    ) {
-      const [year, month, day] = route.departureDate
-        .split("-")
-        .map(Number);
-      const [hours, minutes] = route.departureTime
-        .split(":")
-        .map(Number);
+        ? route.durationMinutes
+        : DEFAULT_EVENT_DURATION_MINUTES;
 
-      const start = new Date(
-        Date.UTC(year, month - 1, day, hours, minutes, 0),
-      );
-      const end = new Date(
-        start.getTime() + route.durationMinutes * 60_000,
-      );
-
-      lines.push(
-        `DTEND:${[
-          end.getUTCFullYear(),
-          pad(end.getUTCMonth() + 1),
-          pad(end.getUTCDate()),
-          "T",
-          pad(end.getUTCHours()),
-          pad(end.getUTCMinutes()),
-          "00",
-        ].join("")}`,
-      );
-    }
+    lines.push(
+      `DTEND:${addMinutesToLocalDateTime(
+        route.departureDate,
+        route.departureTime,
+        durationMinutes,
+      )}`,
+    );
   } else {
     lines.push(
       `DTSTART;VALUE=DATE:${formatCalendarDate(
@@ -185,13 +305,23 @@ export function createCalendarEvent(
     `LOCATION:${escapeCalendarText(destination)}`,
   );
 
-  if (route.routeUrl?.trim()) {
-    lines.push(`URL:${route.routeUrl.trim()}`);
+  const routeUrl = route.routeUrl?.trim();
+
+  // A newline inside the value would terminate the property and let the rest
+  // of the string be read as a new one, so anything with a control character
+  // is dropped rather than sanitised into something that looks valid.
+  if (routeUrl && !CONTROL_CHARACTERS.test(routeUrl)) {
+    lines.push(`URL:${routeUrl}`);
   }
+
+  // Reset lastIndex: CONTROL_CHARACTERS is a global regex, and `test` on a
+  // global regex is stateful.
+  CONTROL_CHARACTERS.lastIndex = 0;
 
   lines.push("END:VEVENT", "END:VCALENDAR", "");
 
-  return lines.join("\r\n");
+  // Folding is applied here, once, so no call site has to remember it.
+  return lines.map(foldCalendarLine).join("\r\n");
 }
 
 export function downloadCalendarEvent(
