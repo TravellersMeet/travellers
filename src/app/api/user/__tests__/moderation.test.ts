@@ -29,6 +29,16 @@ vi.mock("@/lib/auth", () => ({
   auth: vi.fn(),
 }));
 
+vi.mock("@/lib/rate-limit-rules", () => ({
+  enforceRateLimit: vi.fn().mockResolvedValue({
+    allowed: true,
+    limit: 10,
+    remaining: 9,
+    resetAt: 0,
+    retryAfter: 0,
+  }),
+}));
+
 interface MockNextRequest {
   json: () => Promise<any>;
 }
@@ -133,17 +143,30 @@ describe("Safety & Moderation API Endpoints", () => {
   describe("POST /api/user/onboard", () => {
     it("completes onboarding successfully for authorized user", async () => {
       (auth as any).mockResolvedValue({ user: { id: "user-1" } });
+      vi.mocked(prisma.user.findUnique).mockResolvedValue({ isDeleted: false } as any);
       vi.mocked(prisma.user.update).mockResolvedValue({ id: "user-1", onboarded: true } as any);
 
-      const res = await onboardPOST({} as any);
+      const res = await onboardPOST(makeJsonRequest({}) as any);
       const data = await res.json();
 
       expect(res.status).toBe(200);
       expect(data.success).toBe(true);
-      expect(prisma.user.update).toHaveBeenCalledWith({
-        where: { id: "user-1" },
-        data: { onboarded: true },
-      });
+      expect(prisma.user.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: "user-1" },
+          data: { onboarded: true },
+        }),
+      );
+    });
+
+    it("refuses to onboard a soft-deleted account", async () => {
+      (auth as any).mockResolvedValue({ user: { id: "user-1" } });
+      vi.mocked(prisma.user.findUnique).mockResolvedValue({ isDeleted: true } as any);
+
+      const res = await onboardPOST(makeJsonRequest({}) as any);
+
+      expect(res.status).toBe(404);
+      expect(prisma.user.update).not.toHaveBeenCalled();
     });
   });
 });
