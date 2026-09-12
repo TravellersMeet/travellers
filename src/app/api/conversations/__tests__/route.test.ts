@@ -106,7 +106,28 @@ describe("GET /api/conversations", () => {
     );
   });
 
-  it("returns nulls for an empty conversation", async () => {
+  it("returns a null lastMessage for a conversation with no messages", async () => {
+    vi.mocked(prisma.block.findMany).mockResolvedValue(
+      [] as never,
+    );
+    vi.mocked(prisma.conversation.findMany).mockResolvedValue([
+      {
+        id: "conv-2",
+        createdAt: new Date("2026-08-01T00:00:00.000Z"),
+        updatedAt: new Date("2026-08-01T00:00:00.000Z"),
+        users: [{ id: "user-2", name: "Nadia" }],
+        messages: [],
+      },
+    ] as never);
+
+    const response = await GET(request());
+    const body = await response.json();
+
+    expect(body.conversations[0].otherUser.name).toBe("Nadia");
+    expect(body.conversations[0].lastMessage).toBeNull();
+  });
+
+  it("skips a conversation with no counterpart instead of sending otherUser: null", async () => {
     vi.mocked(prisma.block.findMany).mockResolvedValue(
       [] as never,
     );
@@ -123,7 +144,6 @@ describe("GET /api/conversations", () => {
     const response = await GET(request());
     const body = await response.json();
 
-    expect(body.conversations[0].otherUser).toBeNull();
-    expect(body.conversations[0].lastMessage).toBeNull();
+    expect(body.conversations).toEqual([]);
   });
 });

@@ -88,6 +88,9 @@ export default function ChatInterface({
   useState<SharedRoute | null>(null);
   
   const [loadingConvs, setLoadingConvs] = useState(true);
+  // Cursor for the next page of conversations; null once the list is complete.
+  const [olderConvsCursor, setOlderConvsCursor] = useState<string | null>(null);
+  const [loadingOlderConvs, setLoadingOlderConvs] = useState(false);
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [loadingOlderMessages, setLoadingOlderMessages] = useState(false);
   const [olderMessagesCursor, setOlderMessagesCursor] = useState<string | null>(null);
@@ -107,6 +110,7 @@ export default function ChatInterface({
       const convData = await convRes.json();
       if (convRes.ok) {
         setConversations(convData.conversations || []);
+        setOlderConvsCursor(convData.pagination?.nextCursor ?? null);
       }
 
       const connRes = await fetch("/api/connections");
@@ -124,6 +128,35 @@ export default function ChatInterface({
   useEffect(() => {
     fetchData();
   }, []);
+
+  // Appends the next page of conversations. The sidebar starts at one page and
+  // grows on demand rather than pulling every thread on mount.
+  const loadOlderConversations = async () => {
+    if (!olderConvsCursor || loadingOlderConvs) return;
+
+    setLoadingOlderConvs(true);
+    try {
+      const res = await fetch(
+        `/api/conversations?cursor=${encodeURIComponent(olderConvsCursor)}`,
+      );
+      const data = await res.json();
+      if (res.ok) {
+        setConversations((prev) => {
+          // Guard against a duplicate if a thread moved between pages.
+          const seen = new Set(prev.map((conv) => conv.id));
+          const next = (data.conversations || []).filter(
+            (conv: Conversation) => !seen.has(conv.id),
+          );
+          return [...prev, ...next];
+        });
+        setOlderConvsCursor(data.pagination?.nextCursor ?? null);
+      }
+    } catch (error) {
+      console.error("Error loading older conversations:", error);
+    } finally {
+      setLoadingOlderConvs(false);
+    }
+  };
 
   // Fetch the most recent page of messages when the active conversation
   // changes. The endpoint returns newest-first internally but hands back
@@ -578,6 +611,22 @@ if (!inputText.trim() && !selectedRoute) {
                 </button>
               );
             })
+          )}
+
+          {olderConvsCursor && (
+            <button
+              onClick={loadOlderConversations}
+              disabled={loadingOlderConvs}
+              className="w-full py-3 text-[11px] font-medium text-blue-600 dark:text-blue-400 hover:bg-slate-100/50 dark:hover:bg-white/5 transition disabled:opacity-50"
+            >
+              {loadingOlderConvs ? (
+                <span className="flex items-center justify-center gap-1.5">
+                  <Loader2 className="animate-spin" size={12} /> Loading...
+                </span>
+              ) : (
+                "Load older conversations"
+              )}
+            </button>
           )}
         </div>
       </div>
