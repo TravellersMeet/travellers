@@ -62,6 +62,12 @@ export const RATE_LIMIT_RULES = {
     limit: 10,
     windowSeconds: 60,
   },
+  /** Saving a route — each write can carry a large encoded polyline. */
+  routeWrite: {
+    namespace: "routes:write",
+    limit: 30,
+    windowSeconds: 60,
+  },
   /** Sending a chat message. */
   messageSend: {
     namespace: "messages:send",
