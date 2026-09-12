@@ -1,30 +1,78 @@
-function getEnvNumber(key: string, fallback: number): number {
-  const value = process.env[key];
-  const parsed = Number(value);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+import {
+  RATE_LIMIT_RULES,
+  resolveRateLimitRules,
+  type RateLimitEnv,
+} from "@/lib/rate-limit-rules";
+
+/**
+ * A read-only view of the auth slice of the enforced rule table.
+ *
+ * @deprecated Import `RATE_LIMIT_RULES` from `@/lib/rate-limit-rules` instead.
+ *
+ * This module used to hold a *second*, independent copy of the auth limits,
+ * built from the `RATE_LIMIT_AUTH_*` environment variables. Nothing enforced
+ * it — every route goes through `enforceRateLimit`, which reads
+ * `RATE_LIMIT_RULES` — so the documented variables changed nothing while the
+ * tests here asserted their values and passed.
+ *
+ * It is now derived from the same resolved table the routes enforce, so the
+ * two can no longer disagree. It is kept only so existing imports keep
+ * compiling; new code should read the rules directly.
+ */
+
+export interface AuthRateLimitEntry {
+  limit: number;
+  windowSeconds: number;
 }
 
-export const RATE_LIMIT_CONFIG = {
-  auth: {
-    signin: {
-      limit: getEnvNumber("RATE_LIMIT_AUTH_SIGNIN_LIMIT", 10),
-      windowSeconds: getEnvNumber("RATE_LIMIT_AUTH_SIGNIN_WINDOW_SECONDS", 600), // 10 minutes
+export interface AuthRateLimitConfig {
+  signin: AuthRateLimitEntry;
+  signup: AuthRateLimitEntry;
+  forgotPassword: AuthRateLimitEntry;
+  verifyOtp: AuthRateLimitEntry;
+  resendOtp: AuthRateLimitEntry;
+}
+
+function toEntry({
+  limit,
+  windowSeconds,
+}: {
+  limit: number;
+  windowSeconds: number;
+}): AuthRateLimitEntry {
+  return { limit, windowSeconds };
+}
+
+/**
+ * Projects a resolved rule table onto the legacy `{ auth: { … } }` shape.
+ *
+ * Exported so tests can build the view from a mocked environment without
+ * reaching into module-load state.
+ */
+export function buildRateLimitConfig(
+  rules: typeof RATE_LIMIT_RULES = RATE_LIMIT_RULES,
+): { auth: AuthRateLimitConfig } {
+  return {
+    auth: {
+      signin: toEntry(rules.authSignin),
+      signup: toEntry(rules.authSignup),
+      forgotPassword: toEntry(rules.authForgotPassword),
+      verifyOtp: toEntry(rules.authVerifyOtp),
+      resendOtp: toEntry(rules.authResendOtp),
     },
-    signup: {
-      limit: getEnvNumber("RATE_LIMIT_AUTH_SIGNUP_LIMIT", 5),
-      windowSeconds: getEnvNumber("RATE_LIMIT_AUTH_SIGNUP_WINDOW_SECONDS", 3600), // 1 hour
-    },
-    forgotPassword: {
-      limit: getEnvNumber("RATE_LIMIT_AUTH_FORGOT_PASSWORD_LIMIT", 3),
-      windowSeconds: getEnvNumber("RATE_LIMIT_AUTH_FORGOT_PASSWORD_WINDOW_SECONDS", 900), // 15 minutes
-    },
-    verifyOtp: {
-      limit: getEnvNumber("RATE_LIMIT_AUTH_VERIFY_OTP_LIMIT", 10),
-      windowSeconds: getEnvNumber("RATE_LIMIT_AUTH_VERIFY_OTP_WINDOW_SECONDS", 600), // 10 minutes
-    },
-    resendOtp: {
-      limit: getEnvNumber("RATE_LIMIT_AUTH_RESEND_OTP_LIMIT", 3),
-      windowSeconds: getEnvNumber("RATE_LIMIT_AUTH_RESEND_OTP_WINDOW_SECONDS", 600), // 10 minutes
-    },
-  },
-} as const;
+  };
+}
+
+/**
+ * Convenience wrapper for callers that want the legacy shape resolved against
+ * a specific environment rather than `process.env`.
+ */
+export function resolveRateLimitConfig(
+  env?: RateLimitEnv,
+): { auth: AuthRateLimitConfig } {
+  return buildRateLimitConfig(
+    resolveRateLimitRules({ env }),
+  );
+}
+
+export const RATE_LIMIT_CONFIG = buildRateLimitConfig();
