@@ -172,7 +172,9 @@ export default function NotificationBell() {
 
   async function openNotification(notification: Notification) {
     try {
-      await fetch(`/api/notifications/${notification.id}/read`, {
+      // Same endpoint the dismiss path uses. This used to call
+      // /read, which was a separate handler returning a different shape.
+      await fetch(`/api/notifications/${notification.id}`, {
         method: "PATCH",
       });
 

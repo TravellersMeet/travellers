@@ -220,18 +220,50 @@ export async function deleteNotificationsForUser(
   return result.count;
 }
 
+/**
+ * Mark one notification as read.
+ *
+ * Scoped by `userId` in the same statement as the id, for the same reason
+ * `deleteNotification` above is: the ownership check and the write are one
+ * operation, so there is no window between them and no way for a later edit
+ * to reorder them apart. The two PATCH routes used to hand-roll this as a
+ * `findFirst` followed by an `update` keyed on the id alone — correct only
+ * because of the sequencing, and a `P2025` (surfaced as a 500) if the row was
+ * deleted in between.
+ *
+ * `activeNotificationWhere` is applied so the write agrees with
+ * `listNotifications` about which rows exist. Without it, an id captured
+ * before expiry stayed mutable afterwards, even though the read path had
+ * stopped returning it.
+ *
+ * Returns the updated row, or `null` when nothing matched — a foreign id, a
+ * missing one and an expired one are indistinguishable to the caller, which
+ * is what we want.
+ */
 export async function markNotificationAsRead(
   id: string,
   userId: string,
-) {
-  return prisma.notification.updateMany({
+  now = new Date(),
+): Promise<Notification | null> {
+  const result = await prisma.notification.updateMany({
     where: {
       id,
       userId,
+      ...activeNotificationWhere(now),
     },
     data: {
       read: true,
     },
+  });
+
+  if (result.count === 0) {
+    return null;
+  }
+
+  // The write above is the authorised operation; this read is only to build
+  // the response body, and it is already known to be the caller's row.
+  return prisma.notification.findFirst({
+    where: { id, userId },
   });
 }
 
