@@ -158,9 +158,9 @@ export const POST = withValidation(BlockSchema, async (request, validatedData) =
       return NextResponse.json({ success: true, message: "User is already blocked" });
     }
 
-    // Creating the block and clearing a pending connection request go together:
-    // leaving the request behind would keep the blocked user sitting in the
-    // caller's "incoming" list with no way to act on it.
+    // Creating the block and clearing all connection requests go together:
+    // leaving any connection requests (pending or accepted) behind would cause
+    // inconsistent relationship state and keep blocked users listed as connections.
     await prisma.$transaction([
       prisma.block.create({
         data: {
@@ -170,7 +170,6 @@ export const POST = withValidation(BlockSchema, async (request, validatedData) =
       }),
       prisma.connectionRequest.deleteMany({
         where: {
-          status: "PENDING",
           OR: [
             { senderId: session.user.id, receiverId: blockedId },
             { senderId: blockedId, receiverId: session.user.id },
