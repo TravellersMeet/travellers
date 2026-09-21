@@ -47,7 +47,9 @@ const VALID_BODY = {
   conversationId: "conv-1",
   title: "Coffee before the bus",
   locationName: "Anjuna beach shack",
-  meetupTime: "2026-09-01T09:00:00.000Z",
+  // Relative on purpose: POST rejects a meetup more than a day in the past, so a
+  // hardcoded date turns every valid-body test red once the calendar passes it.
+  meetupTime: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
 };
 
 describe("GET /api/meetup-plans", () => {
@@ -284,9 +286,7 @@ describe("POST /api/meetup-plans", () => {
           creatorId: "user-1",
           title: "Coffee before the bus",
           locationName: "Anjuna beach shack",
-          meetupTime: new Date(
-            "2026-09-01T09:00:00.000Z",
-          ),
+          meetupTime: new Date(VALID_BODY.meetupTime),
         }),
       }),
     );

@@ -179,7 +179,7 @@ describe("POST /api/user/block", () => {
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 
-  it("clears a pending connection request alongside the block", async () => {
+  it("clears every connection request between the two users alongside the block", async () => {
     vi.mocked(prisma.user.findUnique).mockResolvedValue({
       id: "user-2",
       isDeleted: false,
@@ -197,8 +197,9 @@ describe("POST /api/user/block", () => {
     expect(
       prisma.connectionRequest.deleteMany,
     ).toHaveBeenCalledWith({
+      // No `status` filter: an ACCEPTED connection must go too, otherwise the
+      // blocked user stays listed as a connection.
       where: {
-        status: "PENDING",
         OR: [
           { senderId: "user-1", receiverId: "user-2" },
           { senderId: "user-2", receiverId: "user-1" },
