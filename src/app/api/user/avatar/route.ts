@@ -2,6 +2,10 @@ import { NextResponse, NextRequest } from "next/server";
 import { auth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { uploadFileToCloudinary } from "@/lib/cloudinary-upload";
+import {
+  deleteCloudinaryAsset,
+  extractCloudinaryPublicId,
+} from "@/lib/cloudinary-delete";
 
 const MAX_FILE_SIZE = 2 * 1024 * 1024; // 2MB
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
@@ -35,19 +39,39 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const uploaded = await uploadFileToCloudinary(
-  file,
-  "travellers/avatars"
-);
+    const existingUser = await prisma.user.findUnique({
+      where: { email: session.user.email },
+      select: { id: true, image: true },
+    });
 
-const updatedUser = await prisma.user.update({
-  where: {
-    email: session.user.email,
-  },
-  data: {
-    image: uploaded.url,
-  },
-});
+    const uploaded = await uploadFileToCloudinary(
+      file,
+      "travellers/avatars"
+    );
+
+    const updatedUser = await prisma.user.update({
+      where: {
+        email: session.user.email,
+      },
+      data: {
+        image: uploaded.url,
+      },
+    });
+
+    if (existingUser?.image && existingUser.image !== uploaded.url) {
+      const oldPublicId = extractCloudinaryPublicId(existingUser.image);
+      if (oldPublicId) {
+        try {
+          await deleteCloudinaryAsset(oldPublicId);
+        } catch (cleanupError) {
+          console.error(
+            "Failed to delete previous avatar asset from Cloudinary:",
+            cleanupError
+          );
+        }
+      }
+    }
+
     return NextResponse.json({ ok: true, image: updatedUser.image });
   } catch (error) {
     console.error("Avatar upload error:", error);
