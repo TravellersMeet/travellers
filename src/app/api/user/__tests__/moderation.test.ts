@@ -9,6 +9,7 @@ vi.mock("@/lib/prisma", () => ({
   default: {
     user: {
       findUnique: vi.fn(),
+      findFirst: vi.fn(),
       update: vi.fn(),
     },
     block: {
@@ -19,6 +20,7 @@ vi.mock("@/lib/prisma", () => ({
       deleteMany: vi.fn(),
     },
     report: {
+      findFirst: vi.fn(),
       create: vi.fn(),
     },
     $transaction: vi.fn((operations) => Promise.all(operations)),
@@ -109,7 +111,7 @@ describe("Safety & Moderation API Endpoints", () => {
   describe("POST /api/user/report", () => {
     it("returns 401 if unauthorized", async () => {
       (auth as any).mockResolvedValue(null);
-      const req = makeJsonRequest({ reportedId: "user-2", reason: "Spam" });
+      const req = makeJsonRequest({ reportedId: "user-2", reason: "SPAM" });
 
       const res = await reportPOST(req as any);
       const data = await res.json();
@@ -120,10 +122,14 @@ describe("Safety & Moderation API Endpoints", () => {
 
     it("creates report successfully if valid payload", async () => {
       (auth as any).mockResolvedValue({ user: { id: "user-1" } });
-      vi.mocked(prisma.user.findUnique).mockResolvedValue({ id: "user-2", name: "Target User" } as any);
+      // The target lookup is now findFirst so it can exclude soft-deleted
+      // accounts, and reason is stored as a canonical code rather than
+      // whatever free text the caller sent.
+      vi.mocked(prisma.user.findFirst).mockResolvedValue({ id: "user-2" } as any);
+      vi.mocked(prisma.report.findFirst).mockResolvedValue(null as any);
       vi.mocked(prisma.report.create).mockResolvedValue({ id: "report-1" } as any);
 
-      const req = makeJsonRequest({ reportedId: "user-2", reason: "Spam", details: "Fake account posting ads" });
+      const req = makeJsonRequest({ reportedId: "user-2", reason: "SPAM", details: "Fake account posting ads" });
       const res = await reportPOST(req as any);
       const data = await res.json();
 
@@ -133,10 +139,20 @@ describe("Safety & Moderation API Endpoints", () => {
         data: {
           reporterId: "user-1",
           reportedId: "user-2",
-          reason: "Spam",
+          reason: "SPAM",
           details: "Fake account posting ads",
         },
       });
+    });
+
+    it("rejects a reason outside the allowed set", async () => {
+      (auth as any).mockResolvedValue({ user: { id: "user-1" } });
+
+      const req = makeJsonRequest({ reportedId: "user-2", reason: "he was rude" });
+      const res = await reportPOST(req as any);
+
+      expect(res.status).toBe(400);
+      expect(prisma.report.create).not.toHaveBeenCalled();
     });
   });
 
