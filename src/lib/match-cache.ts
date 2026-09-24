@@ -66,13 +66,13 @@ export function normalizeMatchDate(
   return date.toISOString().slice(0, 10);
 }
 
-function versionKey(
-  destination: string,
-  date: string,
-): string {
-  return `matches-version:${normalizeMatchDestination(
-    destination,
-  )}:${normalizeMatchDate(date)}`;
+function versionKey(date: string): string {
+  // Keyed by date only. Match search filters destinations by SUBSTRING, so a
+  // ticket's full destination can satisfy many different search queries — a
+  // per-destination version could never invalidate those substring searches
+  // (a verified "Paris, France" ticket never bumped the "Paris" search's key).
+  // A single per-date version invalidates every destination search for the date.
+  return `matches-version:${normalizeMatchDate(date)}`;
 }
 
 function filterFingerprint(
@@ -98,7 +98,6 @@ function filterFingerprint(
 }
 
 export async function getMatchCacheVersion(
-  destination: string,
   date: string,
   store: MatchCacheStore | null = redis as unknown as MatchCacheStore | null,
 ): Promise<number> {
@@ -107,9 +106,7 @@ export async function getMatchCacheVersion(
   }
 
   try {
-    const raw = await store.get(
-      versionKey(destination, date),
-    );
+    const raw = await store.get(versionKey(date));
     const parsed = Number(raw);
 
     return Number.isSafeInteger(parsed) && parsed >= 0
@@ -131,11 +128,7 @@ export async function buildMatchCacheKey(
   const destination =
     normalizeMatchDestination(input.destination);
   const date = normalizeMatchDate(input.date);
-  const version = await getMatchCacheVersion(
-    destination,
-    date,
-    store,
-  );
+  const version = await getMatchCacheVersion(date, store);
 
   return [
     "matches",
@@ -224,11 +217,10 @@ export function getAffectedMatchDates(
 }
 
 async function incrementVersion(
-  destination: string,
   date: string,
   store: MatchCacheStore,
 ): Promise<void> {
-  const key = versionKey(destination, date);
+  const key = versionKey(date);
   await store.incr(key);
 
   // Prevent permanent accumulation of version keys while retaining a
@@ -249,32 +241,24 @@ export async function invalidateMatchCachesForTicket(
     (value): value is TicketCacheIdentity =>
       Boolean(value),
   );
-  const keys = new Set<string>();
+  // Collect the affected dates across the old and new ticket windows. Versions
+  // are keyed by date only, so bumping each date invalidates every destination
+  // search for that date (including substring matches).
+  const dates = new Set<string>();
 
   for (const identity of identities) {
-    const destination =
-      normalizeMatchDestination(
-        identity.destination,
-      );
-
     for (const date of getAffectedMatchDates(
       identity.departureDate,
     )) {
-      keys.add(`${destination}\u0000${date}`);
+      dates.add(date);
     }
   }
 
   try {
     await Promise.all(
-      [...keys].map((entry) => {
-        const [destination, date] =
-          entry.split("\u0000");
-        return incrementVersion(
-          destination,
-          date,
-          store,
-        );
-      }),
+      [...dates].map((date) =>
+        incrementVersion(date, store),
+      ),
     );
   } catch (error) {
     console.warn(
