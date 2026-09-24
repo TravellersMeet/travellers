@@ -10,12 +10,21 @@ function requestWithHeaders(
 }
 
 describe("getClientIp", () => {
-  it("uses the first valid forwarded address", () => {
+  it("uses the rightmost (nearest-hop) forwarded address, not the spoofable leftmost", () => {
     const request = requestWithHeaders({
       "x-forwarded-for": "203.0.113.5, 10.0.0.2",
     });
 
-    expect(getClientIp(request)).toBe("203.0.113.5");
+    expect(getClientIp(request)).toBe("10.0.0.2");
+  });
+
+  it("prefers trusted platform headers over a spoofable X-Forwarded-For", () => {
+    const request = requestWithHeaders({
+      "x-forwarded-for": "1.2.3.4",
+      "x-real-ip": "198.51.100.7",
+    });
+
+    expect(getClientIp(request)).toBe("198.51.100.7");
   });
 
   it("falls back to platform IP headers", () => {
