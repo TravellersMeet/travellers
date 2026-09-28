@@ -248,6 +248,7 @@ We welcome contributions from developers of all skill levels!
 
 - **[Tech Stack](docs/TECH_STACK.md)** — Detailed technology overview
 - **[Architecture](docs/ARCHITECTURE.md)** — Application architecture and service flow
+- **[Authentication](docs/AUTHENTICATION.md)** — NextAuth config, providers, and session/JWT flow
 - **[API Reference](docs/API.md)** — Backend endpoint overview and request examples
 - **[Contributing Guide](docs/CONTRIBUTING.md)** — How to contribute
 - **[Code of Conduct](docs/CODE_OF_CONDUCT.md)** — Community guidelines
