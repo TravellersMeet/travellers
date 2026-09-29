@@ -5,6 +5,7 @@ import {
   getRateLimitIdentifier,
   type RateLimitResult,
   type RateLimitRule,
+  type RateLimitScope,
 } from "@/lib/rate-limit";
 
 /**
@@ -32,11 +33,23 @@ export const RATE_LIMIT_DEFAULTS = {
     limit: 10,
     windowSeconds: 10 * 60,
   },
-  /** OTP verification attempts. */
+  /** OTP verification attempts, per email + IP. */
   authVerifyOtp: {
     namespace: "auth:verify-otp",
     limit: 10,
     windowSeconds: 10 * 60,
+  },
+  /**
+   * OTP verification attempts against one account, keyed on the email alone.
+   *
+   * `authVerifyOtp` keys on `email|ip`, so an attacker guessing a six-digit
+   * code just rotates source addresses to reset the counter. This rule is the
+   * ceiling that actually protects the account.
+   */
+  authVerifyOtpAccount: {
+    namespace: "auth:verify-otp:account",
+    limit: 20,
+    windowSeconds: 15 * 60,
   },
   /** OTP resends — each one sends an email. */
   authResendOtp: {
@@ -239,16 +252,26 @@ export function resolveRateLimitRules({
 export const RATE_LIMIT_RULES: ResolvedRateLimitRules =
   resolveRateLimitRules();
 
+export interface EnforceRateLimitOptions {
+  /** See {@link RateLimitScope}. Defaults to `subject-and-ip`. */
+  scope?: RateLimitScope;
+}
+
 /** Apply a named rule to a request. */
 export async function enforceRateLimit(
   request: NextRequest,
   ruleName: RateLimitRuleName,
   subject?: string | null,
+  { scope }: EnforceRateLimitOptions = {},
 ): Promise<RateLimitResult> {
   const rule = RATE_LIMIT_RULES[ruleName];
 
   return checkRateLimit({
     ...rule,
-    identifier: getRateLimitIdentifier(request, subject),
+    identifier: getRateLimitIdentifier(
+      request,
+      subject,
+      scope,
+    ),
   });
 }

@@ -131,16 +131,35 @@ export async function checkRateLimit({
   }
 }
 
+/**
+ * How a counter is keyed.
+ *
+ * `subject-and-ip` is the default and right for almost everything: it stops
+ * one client hammering a route without letting a shared NAT egress punish
+ * unrelated users.
+ *
+ * `subject` drops the IP, so the counter follows the account no matter where
+ * the request came from. Use it only where the cost of an attempt lands on
+ * somebody other than the caller — guessing a specific account's OTP, for
+ * instance, where per-IP keying means the attacker simply changes address.
+ */
+export type RateLimitScope = "subject-and-ip" | "subject";
+
 export function getRateLimitIdentifier(
   request: NextRequest,
   subject?: string | null,
+  scope: RateLimitScope = "subject-and-ip",
 ): string {
   const ip = getClientIp(request);
   const normalizedSubject = subject?.trim().toLowerCase();
 
-  return normalizedSubject
-    ? `${normalizedSubject}|${ip}`
-    : ip;
+  if (!normalizedSubject) {
+    return ip;
+  }
+
+  return scope === "subject"
+    ? normalizedSubject
+    : `${normalizedSubject}|${ip}`;
 }
 
 export function applyRateLimitHeaders(
