@@ -6,6 +6,7 @@ import Link from "next/link";
 import Image from "next/image";
 import BlockUserModal from "./modals/BlockUserModal";
 import ReportUserModal from "./modals/ReportUserModal";
+import { REPORT_REASON_CODES } from "@/lib/report-reasons";
 
 interface Match {
   id: string;
@@ -77,7 +78,9 @@ export default function DashboardMatches({
   // Moderation
   const [blockingUser, setBlockingUser] = useState<Match | null>(null);
   const [reportingUser, setReportingUser] = useState<Match | null>(null);
-  const [reportReason, setReportReason] = useState("Inappropriate behavior");
+  const [reportReason, setReportReason] = useState<string>(
+    REPORT_REASON_CODES[0],
+  );
   const [reportDetails, setReportDetails] = useState("");
   const [submittingModeration, setSubmittingModeration] = useState(false);
 
@@ -229,6 +232,7 @@ export default function DashboardMatches({
       });
       if (res.ok) {
         alert("Profile reported successfully.");
+        setReportReason(REPORT_REASON_CODES[0]);
         setReportDetails("");
         setReportingUser(null);
       } else {
